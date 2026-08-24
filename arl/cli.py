@@ -178,6 +178,57 @@ def _execute_l3_soak(
     return state
 
 
+def _execute_l4_soak(
+    config,
+    target_contract,
+    *,
+    cycles: int | None,
+    hours: float | None,
+    interval_seconds: float,
+    resume_state=None,
+):
+    def run_cycle(_: int) -> bool:
+        artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
+        result = ZCodeHarness().run_read_only_workflow(target_contract, artifacts)
+        typer.echo(
+            f"{'PASS' if result.passed else 'FAIL'} L4 model={result.model} "
+            f"session={result.session_id} trace={result.trace_path} reason={result.reason}"
+        )
+        _record_production_check(
+            config,
+            scenario="workflow",
+            provider="lmstudio",
+            model=result.model,
+            passed=result.passed,
+            session_id=result.session_id,
+            trace_id=result.trace_id,
+            trace_path=result.trace_path,
+            reason=result.reason,
+        )
+        return result.passed
+
+    runner = SoakRunner(config.paths.state_dir / "soak.json")
+    metadata = {
+        "target": target_contract.name,
+        "scenario": "workflow",
+        "layers": "L4",
+        "interval_seconds": interval_seconds,
+    }
+    state = runner.run(
+        run_cycle,
+        hours=hours,
+        max_cycles=cycles,
+        interval_seconds=interval_seconds,
+        metadata=metadata,
+        resume_from=resume_state,
+    )
+    typer.echo(
+        f"L4 SOAK {state.status.upper()} cycles={state.completed_cycles} "
+        f"failures={state.failures} elapsed={state.elapsed_seconds:.2f}s"
+    )
+    return state
+
+
 @app.command()
 def version() -> None:
     """Print the ARL version."""
@@ -269,10 +320,26 @@ def run(
     config = load_config()
     target_contract = TargetRegistry(config.paths.targets_dir).get(target)
     if selected_layers == {"L4"}:
-        if hours is not None or (cycles is not None and cycles != 1):
-            raise typer.BadParameter("production L4 is intentionally limited to one explicit run")
         if target != "job-search":
             raise typer.BadParameter("L4 production slice is defined for job-search")
+        if scenario == "workflow" and (hours is not None or cycles is not None):
+            effective_interval = (
+                interval_seconds if interval_seconds is not None else (60.0 if hours else 0.0)
+            )
+            state = _execute_l4_soak(
+                config,
+                target_contract,
+                cycles=None if hours is not None else (cycles or 1),
+                hours=hours,
+                interval_seconds=effective_interval,
+            )
+            if state.failures:
+                raise typer.Exit(1)
+            return
+        if hours is not None or (cycles is not None and cycles != 1):
+            raise typer.BadParameter(
+                "only the read-only L4 workflow supports repeated or timed runs"
+            )
         artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
         if scenario in {"echo", "smoke"}:
             result = ZCodeHarness().run_smoke(target_contract, artifacts)
@@ -367,11 +434,23 @@ def resume() -> None:
         typer.echo("checkpoint already completed")
         return
     metadata = saved.metadata or {}
-    if metadata.get("layers") not in {"L2", "L3"} or not metadata.get("target"):
-        typer.echo("checkpoint lacks a resumable L2/L3 run specification", err=True)
+    if metadata.get("layers") not in {"L2", "L3", "L4"} or not metadata.get("target"):
+        typer.echo("checkpoint lacks a resumable L2/L3/L4 run specification", err=True)
         raise typer.Exit(1)
     target_contract = TargetRegistry(config.paths.targets_dir).get(metadata["target"])
-    if metadata["layers"] == "L3":
+    if metadata["layers"] == "L4":
+        if metadata.get("scenario") != "workflow":
+            typer.echo("only the read-only L4 workflow is resumable", err=True)
+            raise typer.Exit(1)
+        state = _execute_l4_soak(
+            config,
+            target_contract,
+            cycles=None,
+            hours=None,
+            interval_seconds=float(metadata.get("interval_seconds", 0)),
+            resume_state=saved,
+        )
+    elif metadata["layers"] == "L3":
         state = _execute_l3_soak(
             config,
             target_contract,

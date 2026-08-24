@@ -16,7 +16,7 @@ This file distinguishes executable evidence from pending external or elapsed-tim
 ## Latest verification
 
 - `uv run ruff check .`: PASS.
-- `uv run pytest -q`: 42 passed.
+- `uv run pytest -q`: 44 passed.
 - `uv run arl demo --suite`: top-1/top-3 1.0, false repair rate 0.0.
 - Qwen/ZCode/Job MCP read-only workflow: `get_status → list_stored_jobs → get_job → check_applied`, PASS with no forbidden calls.
 - Native Z.ai Coding Plan / GLM-5.3 escalation called proxied Job MCP `get_status`, PASS.
@@ -31,6 +31,9 @@ This file distinguishes executable evidence from pending external or elapsed-tim
 - Literal Job Search MCP soak: 7243 seconds, 24/24 PASS, zero failures, 11 live
   Adzuna provider cycles and 13 duplicate-cache cycles; live responses contained
   19–24 jobs and every provider report was healthy.
+- Literal L3 schema-fuzz soak: 7225.844 seconds, 24/24 cycles and 456/456 schema
+  assertions PASS with zero failures; only four read-only Job Search MCP tools were
+  reachable and no model or application action was used.
 - Runtime reports: `.arl` metadata to `reports/runtime/report.md` and `report.json`.
 
 ## Optional extended evidence

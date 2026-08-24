@@ -56,6 +56,14 @@ class ZCodeHarness:
         server = target.topology[0].server
         if server.transport != "stdio" or server.command is None:
             raise ValueError("M4 ZCode adapter requires a stdio target")
+        server_command = shutil.which(server.command) or server.command
+        server_args = list(server.args)
+        if "--directory" in server_args:
+            directory_index = server_args.index("--directory") + 1
+            directory = Path(server_args[directory_index])
+            if not directory.is_absolute():
+                directory = (Path.cwd() / directory).resolve()
+            server_args[directory_index] = str(directory)
         proxy_args = [
             "-m",
             "arl.tracing.stdio_proxy",
@@ -71,8 +79,8 @@ class ZCodeHarness:
                 for value in ("--irreversible-tool", tool)
             ],
             "--",
-            server.command,
-            *server.args,
+            server_command,
+            *server_args,
         ]
         return {
             "provider": {
