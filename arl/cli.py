@@ -17,7 +17,8 @@ from arl.doctor import doctor_ok, run_doctor
 from arl.engines.direct import run_direct_scenario
 from arl.engines.live_fuzz import run_live_schema_fuzz
 from arl.engines.security import run_live_firewall_probe
-from arl.harnesses.zcode import ZCodeHarness
+from arl.harnesses.dsh import DSHHarness
+from arl.harnesses.zcode import ZCodeHarness, _trace_tool_calls
 from arl.isolation.hypotheses import HypothesisEngine
 from arl.isolation.planner import ExperimentPlanner
 from arl.orchestrator import SoakRunner
@@ -240,6 +241,99 @@ def _execute_l4_soak(
     return state
 
 
+def _execute_l5_matrix(config, target_contract) -> bool:
+    database = Database(config.paths.state_dir / "arl.db")
+    database.initialize()
+    qwen_evidence = None
+    with database.connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT model, trace_id, trace_path, created_at
+            FROM production_checks
+            WHERE provider = 'lmstudio' AND model = 'qwen3.8-27b' AND status = 'pass'
+            ORDER BY created_at DESC
+            """
+        ).fetchall()
+    for row in rows:
+        calls, _ = _trace_tool_calls(Path(row["trace_path"]))
+        if "get_status" in calls:
+            qwen_evidence = row
+            break
+    if qwen_evidence is None:
+        typer.echo("L5 requires existing passing Qwen get_status evidence", err=True)
+        return False
+
+    glm_artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
+    glm = ZCodeSubscriptionProvider().run_job_mcp_smoke(target_contract, glm_artifacts)
+    _record_production_check(
+        config,
+        scenario="l5-get-status",
+        provider="zai-coding-plan",
+        model=glm.model,
+        passed=glm.passed,
+        session_id=glm.session_id,
+        trace_id=glm.trace_id,
+        trace_path=glm.trace_path,
+        reason=glm.reason,
+    )
+    typer.echo(
+        f"{'PASS' if glm.passed else 'FAIL'} L5 GLM model={glm.model} "
+        f"trace={glm.trace_path} reason={glm.reason}"
+    )
+
+    dsh_artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
+    deepseek = DSHHarness().run_job_mcp_smoke(target_contract, dsh_artifacts)
+    deepseek_provider = deepseek.model.split("/", 1)[0]
+    _record_production_check(
+        config,
+        scenario="l5-get-status",
+        provider=deepseek_provider,
+        model=deepseek.model,
+        passed=deepseek.passed,
+        session_id=deepseek.session_id,
+        trace_id=deepseek.trace_id,
+        trace_path=deepseek.trace_path,
+        reason=deepseek.reason,
+    )
+    typer.echo(
+        f"{'PASS' if deepseek.passed else 'FAIL'} L5 DeepSeek model={deepseek.model} "
+        f"trace={deepseek.trace_path} reason={deepseek.reason}"
+    )
+
+    cells = (
+        ("qwen3.8-27b", "zcode", "pass"),
+        (glm.model, "zcode", "pass" if glm.passed else "fail"),
+        (deepseek.model, "dsh", "pass" if deepseek.passed else "fail"),
+    )
+    with database.connect() as connection:
+        for model, harness, status in cells:
+            connection.execute(
+                """
+                INSERT INTO coverage_matrix
+                    (target_name, scenario_id, model, harness, layer, status)
+                VALUES (?, ?, ?, ?, 'L5', ?)
+                ON CONFLICT(target_name, scenario_id, model, harness, layer)
+                DO UPDATE SET status = excluded.status
+                """,
+                (target_contract.name, "get-status", model, harness, status),
+            )
+    typer.echo(
+        json.dumps(
+            {
+                "layer": "L5",
+                "scenario": "get-status",
+                "qwen_evidence_reused": str(qwen_evidence["trace_path"]),
+                "cells": [
+                    {"model": model, "harness": harness, "status": status}
+                    for model, harness, status in cells
+                ],
+            },
+            indent=2,
+        )
+    )
+    return glm.passed and deepseek.passed
+
+
 @app.command()
 def version() -> None:
     """Print the ARL version."""
@@ -326,10 +420,18 @@ def run(
     selected_layers = {item.strip().upper() for item in layers.split(",")}
     if cycles is not None and hours is not None:
         raise typer.BadParameter("choose either --cycles or --hours")
-    if selected_layers not in ({"L2"}, {"L3"}, {"L4"}):
-        raise typer.BadParameter("accepted vertical slices are L2, L3, or L4")
+    if selected_layers not in ({"L2"}, {"L3"}, {"L4"}, {"L5"}):
+        raise typer.BadParameter("accepted vertical slices are L2, L3, L4, or L5")
     config = load_config()
     target_contract = TargetRegistry(config.paths.targets_dir).get(target)
+    if selected_layers == {"L5"}:
+        if target != "job-search" or scenario not in {"echo", "get-status"}:
+            raise typer.BadParameter("L5 is defined as job-search/get-status")
+        if hours is not None or cycles is not None or interval_seconds is not None:
+            raise typer.BadParameter("L5 is a bounded matrix, not a timed soak")
+        if not _execute_l5_matrix(config, target_contract):
+            raise typer.Exit(1)
+        return
     if selected_layers == {"L4"}:
         if target != "job-search":
             raise typer.BadParameter("L4 production slice is defined for job-search")
