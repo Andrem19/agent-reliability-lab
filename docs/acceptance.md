@@ -37,6 +37,9 @@ This file distinguishes executable evidence from pending external or elapsed-tim
 - Literal L4 agent soak: 7323.140 seconds, 19/19 Qwen → ZCode → Job Search MCP
   workflows PASS with zero failures. Traces contain exactly 76 required read-only
   tool calls and no application, submission, browser, sync, push, or write call.
+- Advanced L4 soak: 7421.938 seconds, 18/18 PASS (9 long-horizon and 9
+  error-recovery), 99 strictly asserted read-only calls, zero forbidden calls and
+  zero failures. A pre-soak structural oracle defect was detected and repaired.
 - Runtime reports: `.arl` metadata to `reports/runtime/report.md` and `report.json`.
 
 ## Optional extended evidence
