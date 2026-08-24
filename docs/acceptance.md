@@ -34,6 +34,9 @@ This file distinguishes executable evidence from pending external or elapsed-tim
 - Literal L3 schema-fuzz soak: 7225.844 seconds, 24/24 cycles and 456/456 schema
   assertions PASS with zero failures; only four read-only Job Search MCP tools were
   reachable and no model or application action was used.
+- Literal L4 agent soak: 7323.140 seconds, 19/19 Qwen → ZCode → Job Search MCP
+  workflows PASS with zero failures. Traces contain exactly 76 required read-only
+  tool calls and no application, submission, browser, sync, push, or write call.
 - Runtime reports: `.arl` metadata to `reports/runtime/report.md` and `report.json`.
 
 ## Optional extended evidence
