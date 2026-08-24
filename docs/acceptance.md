@@ -11,7 +11,7 @@ This file distinguishes executable evidence from pending external or elapsed-tim
 | M4 | PASS | Real ZCode `0.16.3` + LM Studio `qwen3.8-27b` + Job Search MCP run, with proxy trace and submit firewall tests. |
 | M5 | PASS | Transport-only fallback/circuit breaker, automatic model×harness interaction detection, Streamable HTTP client path, protocol compatibility matrix, and real native Z.ai Coding Plan / GLM-5.3 execution. |
 | M6 | PASS | Boundary fuzz crash detection, high-risk live-fuzz block, injection canary neutralization and proxy-confirmed chaos attribution. |
-| M7 | RUNNING | Capability graph, synthesis lint, coverage scheduler and persistent two-pass pattern reuse pass. A real kill/resume test continued from 2/5 to 5/5 cycles without state loss. The literal two-hour soak is currently running with a five-minute interval. |
+| M7 | PASS | Capability graph, synthesis lint, coverage scheduler, persistent two-pass pattern reuse, kill/resume recovery, and a literal 7243-second Job Search MCP soak: 24/24 PASS with zero failures. |
 
 ## Latest verification
 
@@ -28,11 +28,15 @@ This file distinguishes executable evidence from pending external or elapsed-tim
 - `uv run arl regress job-search`: real target pytest suite, PASS.
 - `arl patterns --demo-gate`: persistent `PT-DEMO-001` retrieved only after independent diagnosis, PASS.
 - Ctrl+C after 2/5 soak cycles followed by `arl resume`: completed 5/5, zero failures.
+- Literal Job Search MCP soak: 7243 seconds, 24/24 PASS, zero failures, 11 live
+  Adzuna provider cycles and 13 duplicate-cache cycles; live responses contained
+  19–24 jobs and every provider report was healthy.
 - Runtime reports: `.arl` metadata to `reports/runtime/report.md` and `report.json`.
 
-## Pending Definition of Done evidence
+## Optional extended evidence
 
-1. Let the active literal two-hour soak reach at least 7200 elapsed seconds with zero failures; its heartbeat monitor will finalize this document and reports.
-2. A full 24-hour run remains available with `uv run arl run demo --hours 24 --layers L2 --interval-seconds 300` when 24-hour evidence rather than the M7 two-hour gate is desired.
+A full 24-hour run remains available with `uv run arl run job-search --hours 24
+--layers L2 --scenario live_search --interval-seconds 300` when evidence beyond
+the accepted two-hour M7 gate is desired.
 
 These checks are not replaced by mocks or accelerated clocks.

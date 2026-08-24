@@ -25,7 +25,11 @@ ARL currently provides:
 - schema fuzzing, chaos classification, evidence provenance/anti-injection, metamorphic and differential checks;
 - capability graphs, synthesized-scenario lint, coverage scheduling, two-pass failure patterns, and checkpointed soak execution.
 
-Native Z.ai Coding Plan / GLM-5.3 escalation, Qwen's production read-only Job MCP workflow, the production firewall, live Adzuna search, and crash/resume have real trace-backed acceptance evidence. The literal two-hour M7 soak is monitored separately and is never replaced by accelerated-clock evidence.
+Native Z.ai Coding Plan / GLM-5.3 escalation, Qwen's production read-only Job MCP
+workflow, the production firewall, live Adzuna search, and crash/resume have real
+trace-backed acceptance evidence. The literal M7 Job Search MCP soak completed for
+7243 seconds with 24/24 passing cycles and zero failures; elapsed time was never
+simulated or accelerated.
 
 The production MCP validation also found and repaired a real expired-token Google Drive
 OAuth defect. Its unit regression and three live read-only replays pass; the commit is
@@ -78,3 +82,5 @@ the locally served `qwen3.8-27b`. If LM Studio is unavailable, doctor reports
 `test_infra_unavailable`.
 
 See [discovery](docs/discovery.md) and [architecture](docs/architecture.md).
+The accepted two-hour production-target evidence is recorded in the
+[Job Search MCP soak report](docs/job-mcp-soak-2026-08-24.md).

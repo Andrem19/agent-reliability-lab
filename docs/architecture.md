@@ -13,8 +13,8 @@ they do not control the state machine.
 ## Vertical slices
 
 Each milestone owns a runnable end-to-end slice and an acceptance gate. A failed gate
-stops progression. M0 through M6 have executable gates. M7 has executable autonomy
-components and a bounded soak smoke; its multi-hour temporal gate must be run for real.
+stops progression. M0 through M7 have executable gates; M7's temporal gate is based on
+real elapsed time rather than an accelerated or mocked clock.
 
 ## Component boundaries
 
@@ -58,6 +58,5 @@ vertical slices (M1/M4/M5), using the actual discovered CLI/protocol contracts.
 M0–M6 are accepted by automated and real vertical tests. M4 additionally passed real
 ZCode/Qwen and native Z.ai GLM-5.3 Job Search MCP workflows with proxy trace evidence.
 The repair path has also diagnosed, patched, replayed, regression-tested, and staged a
-real Google Drive OAuth defect without modifying the target's `main` branch. M7's
-literal two-hour temporal gate remains in progress and is not replaced by simulated
-elapsed time.
+real Google Drive OAuth defect without modifying the target's `main` branch. M7 passed
+a literal 7243-second Job Search MCP soak with 24/24 successful cycles and no failures.
