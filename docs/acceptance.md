@@ -40,6 +40,10 @@ This file distinguishes executable evidence from pending external or elapsed-tim
 - Advanced L4 soak: 7421.938 seconds, 18/18 PASS (9 long-horizon and 9
   error-recovery), 99 strictly asserted read-only calls, zero forbidden calls and
   zero failures. A pre-soak structural oracle defect was detected and repaired.
+- Bounded live L5 matrix: Qwen/ZCode, native Z.ai GLM-5.3/ZCode, and the actual
+  DSH-selected `deepseek-official/deepseek-v4-flash` all PASS the same proxied
+  read-only `get_status` control. GLM used one call; DeepSeek used one failed
+  configuration probe and one passing confirmation after the DSH adapter repair.
 - Runtime reports: `.arl` metadata to `reports/runtime/report.md` and `report.json`.
 
 ## Optional extended evidence
