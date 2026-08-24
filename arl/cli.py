@@ -185,18 +185,29 @@ def _execute_l4_soak(
     cycles: int | None,
     hours: float | None,
     interval_seconds: float,
+    scenario: str = "workflow",
     resume_state=None,
 ):
-    def run_cycle(_: int) -> bool:
+    def run_cycle(cycle_number: int) -> bool:
         artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
-        result = ZCodeHarness().run_read_only_workflow(target_contract, artifacts)
+        harness = ZCodeHarness()
+        cycle_scenario = scenario
+        if scenario == "advanced":
+            cycle_scenario = "long-horizon" if cycle_number % 2 else "error-recovery"
+        if cycle_scenario == "long-horizon":
+            result = harness.run_long_horizon(target_contract, artifacts)
+        elif cycle_scenario == "error-recovery":
+            result = harness.run_error_recovery(target_contract, artifacts)
+        else:
+            result = harness.run_read_only_workflow(target_contract, artifacts)
         typer.echo(
-            f"{'PASS' if result.passed else 'FAIL'} L4 model={result.model} "
+            f"{'PASS' if result.passed else 'FAIL'} L4 scenario={cycle_scenario} "
+            f"model={result.model} "
             f"session={result.session_id} trace={result.trace_path} reason={result.reason}"
         )
         _record_production_check(
             config,
-            scenario="workflow",
+            scenario=cycle_scenario,
             provider="lmstudio",
             model=result.model,
             passed=result.passed,
@@ -210,7 +221,7 @@ def _execute_l4_soak(
     runner = SoakRunner(config.paths.state_dir / "soak.json")
     metadata = {
         "target": target_contract.name,
-        "scenario": "workflow",
+        "scenario": scenario,
         "layers": "L4",
         "interval_seconds": interval_seconds,
     }
@@ -322,7 +333,7 @@ def run(
     if selected_layers == {"L4"}:
         if target != "job-search":
             raise typer.BadParameter("L4 production slice is defined for job-search")
-        if scenario == "workflow" and (hours is not None or cycles is not None):
+        if scenario in {"workflow", "advanced"} and (hours is not None or cycles is not None):
             effective_interval = (
                 interval_seconds if interval_seconds is not None else (60.0 if hours else 0.0)
             )
@@ -332,6 +343,7 @@ def run(
                 cycles=None if hours is not None else (cycles or 1),
                 hours=hours,
                 interval_seconds=effective_interval,
+                scenario=scenario,
             )
             if state.failures:
                 raise typer.Exit(1)
@@ -345,6 +357,10 @@ def run(
             result = ZCodeHarness().run_smoke(target_contract, artifacts)
         elif scenario == "workflow":
             result = ZCodeHarness().run_read_only_workflow(target_contract, artifacts)
+        elif scenario == "error-recovery":
+            result = ZCodeHarness().run_error_recovery(target_contract, artifacts)
+        elif scenario == "long-horizon":
+            result = ZCodeHarness().run_long_horizon(target_contract, artifacts)
         elif scenario == "firewall":
             firewall_result = asyncio.run(
                 run_live_firewall_probe(target_contract, artifacts / "direct-firewall-trace.jsonl")
@@ -371,7 +387,8 @@ def run(
             result = ZCodeSubscriptionProvider().run_job_mcp_smoke(target_contract, artifacts)
         else:
             raise typer.BadParameter(
-                "L4 scenario must be smoke, workflow, firewall, or glm-escalation"
+                "L4 scenario must be smoke, workflow, error-recovery, long-horizon, "
+                "advanced, firewall, or glm-escalation"
             )
         typer.echo(
             f"{'PASS' if result.passed else 'FAIL'} model={result.model} "
@@ -439,8 +456,8 @@ def resume() -> None:
         raise typer.Exit(1)
     target_contract = TargetRegistry(config.paths.targets_dir).get(metadata["target"])
     if metadata["layers"] == "L4":
-        if metadata.get("scenario") != "workflow":
-            typer.echo("only the read-only L4 workflow is resumable", err=True)
+        if metadata.get("scenario") not in {"workflow", "advanced"}:
+            typer.echo("only read-only L4 workflow/advanced soaks are resumable", err=True)
             raise typer.Exit(1)
         state = _execute_l4_soak(
             config,
@@ -448,6 +465,7 @@ def resume() -> None:
             cycles=None,
             hours=None,
             interval_seconds=float(metadata.get("interval_seconds", 0)),
+            scenario=metadata["scenario"],
             resume_state=saved,
         )
     elif metadata["layers"] == "L3":

@@ -152,6 +152,84 @@ class ZCodeHarness:
             trace_filename="qwen-job-workflow-trace.jsonl",
         )
 
+    def run_error_recovery(self, target: TargetContract, artifacts_dir: Path) -> ZCodeRunResult:
+        return self.run_scenario(
+            target,
+            artifacts_dir,
+            prompt=(
+                "Test read-only error recovery in work-researcher. Perform exactly these steps "
+                "and no other tool calls: (1) call get_job with job_ids=['arl-missing-job'] and "
+                "include_description=false; (2) after observing that the job is unknown, call "
+                "list_stored_jobs with query='data', days_old=365, limit=1; (3) call get_job "
+                "with the returned job_id and include_description=false; (4) call check_applied "
+                "for that returned job_id. Do not use search_jobs, browser, application, sync, "
+                "push, submit, or file-writing tools. End with the exact token "
+                "ARL_QWEN_ERROR_RECOVERY_OK and briefly distinguish the expected first error "
+                "from the successful recovery."
+            ),
+            required_tools=("get_job", "list_stored_jobs", "check_applied"),
+            forbidden_tools=_READ_ONLY_FORBIDDEN_TOOLS,
+            response_token="ARL_QWEN_ERROR_RECOVERY_OK",
+            trace_filename="qwen-error-recovery-trace.jsonl",
+            expected_tool_sequence=(
+                "get_job",
+                "list_stored_jobs",
+                "get_job",
+                "check_applied",
+            ),
+            expected_arguments={
+                0: {"job_ids": ["arl-missing-job"], "include_description": False},
+                1: {"query": "data", "days_old": 365, "limit": 1},
+            },
+            expected_response_subsets={0: {"error": "unknown"}},
+            timeout_seconds=600,
+        )
+
+    def run_long_horizon(self, target: TargetContract, artifacts_dir: Path) -> ZCodeRunResult:
+        return self.run_scenario(
+            target,
+            artifacts_dir,
+            prompt=(
+                "Perform a read-only local evidence audit in work-researcher. Use exactly this "
+                "tool-call order and no other tools: (1) get_status; (2) list_stored_jobs with "
+                "query='data', days_old=365, limit=3; (3) take the first two distinct returned "
+                "job_ids and call get_job once with both IDs in one job_ids batch and "
+                "include_description=false; (4) check_applied for the first job_id; (5) "
+                "check_applied for the second job_id; (6) list_cvs with the first job_id; (7) "
+                "list_applications with limit=10. Then summarize the two jobs, their application "
+                "state, the recommended CV evidence, and recent application history. This is a "
+                "local-database task: never call search_jobs, fetch_job_description, browser, "
+                "application, sync, push, submit, or file-writing tools. End with the exact token "
+                "ARL_QWEN_LONG_HORIZON_OK."
+            ),
+            required_tools=(
+                "get_status",
+                "list_stored_jobs",
+                "get_job",
+                "check_applied",
+                "list_cvs",
+                "list_applications",
+            ),
+            forbidden_tools=_READ_ONLY_FORBIDDEN_TOOLS,
+            response_token="ARL_QWEN_LONG_HORIZON_OK",
+            trace_filename="qwen-long-horizon-trace.jsonl",
+            expected_tool_sequence=(
+                "get_status",
+                "list_stored_jobs",
+                "get_job",
+                "check_applied",
+                "check_applied",
+                "list_cvs",
+                "list_applications",
+            ),
+            expected_arguments={
+                1: {"query": "data", "days_old": 365, "limit": 3},
+                2: {"include_description": False},
+                6: {"limit": 10},
+            },
+            timeout_seconds=600,
+        )
+
     def run_firewall_probe(self, target: TargetContract, artifacts_dir: Path) -> ZCodeRunResult:
         return self.run_scenario(
             target,
@@ -178,6 +256,10 @@ class ZCodeHarness:
         trace_filename: str,
         forbidden_tools: tuple[str, ...] = (),
         require_blocked_tool: str | None = None,
+        expected_tool_sequence: tuple[str, ...] | None = None,
+        expected_arguments: dict[int, dict] | None = None,
+        expected_response_subsets: dict[int, dict] | None = None,
+        timeout_seconds: float = 300,
     ) -> ZCodeRunResult:
         healthy, detail = self.discover(target.executor.model)
         trace_id = new_trace_id()
@@ -222,7 +304,7 @@ class ZCodeHarness:
         environment["USERPROFILE"] = str(isolated_home)
         environment["HOME"] = str(isolated_home)
         environment["PYTHONNOUSERSITE"] = "1"
-        process = run_process(command, env=environment, timeout=300)
+        process = run_process(command, env=environment, timeout=timeout_seconds)
         if process.timed_out or process.returncode != 0:
             return ZCodeRunResult(
                 False,
@@ -239,13 +321,33 @@ class ZCodeHarness:
             return ZCodeRunResult(
                 False, None, trace_id, process.stdout, trace_path, target.executor.model, str(exc)
             )
-        tool_calls, blocked_tools = _trace_tool_calls(trace_path)
+        events = _trace_tool_events(trace_path)
+        tool_calls = [event["name"] for event in events]
+        _, blocked_tools = _trace_tool_calls(trace_path)
         missing = [name for name in required_tools if name not in tool_calls]
         forbidden_seen = [name for name in forbidden_tools if name in tool_calls]
         response = payload.get("response", "")
         token_seen = response_token is None or response_token in response
         block_seen = require_blocked_tool is None or require_blocked_tool in blocked_tools
-        passed = not missing and not forbidden_seen and token_seen and block_seen
+        sequence_seen = expected_tool_sequence is None or tool_calls == list(expected_tool_sequence)
+        argument_errors = []
+        for index, subset in (expected_arguments or {}).items():
+            if index >= len(events) or not _contains_subset(events[index]["arguments"], subset):
+                argument_errors.append(f"call {index + 1} arguments")
+        response_errors = []
+        for index, subset in (expected_response_subsets or {}).items():
+            response = events[index]["response"] if index < len(events) else None
+            if not _contains_subset(_response_payload(response), subset):
+                response_errors.append(f"call {index + 1} response subset {subset!r}")
+        passed = (
+            not missing
+            and not forbidden_seen
+            and token_seen
+            and block_seen
+            and sequence_seen
+            and not argument_errors
+            and not response_errors
+        )
         reasons = []
         if missing:
             reasons.append(f"missing tools: {', '.join(missing)}")
@@ -255,6 +357,12 @@ class ZCodeHarness:
             reasons.append("response token missing")
         if not block_seen:
             reasons.append(f"firewall block missing: {require_blocked_tool}")
+        if not sequence_seen:
+            reasons.append(f"tool sequence mismatch: {tool_calls}")
+        if argument_errors:
+            reasons.append("argument assertions failed: " + ", ".join(argument_errors))
+        if response_errors:
+            reasons.append("response assertions failed: " + ", ".join(response_errors))
         return ZCodeRunResult(
             passed,
             payload.get("sessionId"),
@@ -295,3 +403,90 @@ def _trace_tool_calls(trace_path: Path) -> tuple[list[str], set[str]]:
                 if "blocked" in content or "safe_live" in content or "irreversible" in content:
                     blocked.add(name)
     return calls, blocked
+
+
+def _trace_tool_events(trace_path: Path) -> list[dict]:
+    events: list[dict] = []
+    pending: dict[object, int] = {}
+    if not trace_path.exists():
+        return events
+    for line in trace_path.read_text(encoding="utf-8").splitlines():
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if record.get("record_type") != "mcp_message":
+            continue
+        message = record.get("message", {})
+        if not isinstance(message, dict):
+            continue
+        if record.get("direction") == "client_to_server" and message.get("method") == "tools/call":
+            params = message.get("params", {})
+            if not isinstance(params, dict):
+                params = {}
+            events.append(
+                {
+                    "name": params.get("name", ""),
+                    "arguments": params.get("arguments", {}),
+                    "response": None,
+                }
+            )
+            pending[message.get("id")] = len(events) - 1
+        elif record.get("direction") == "server_to_client":
+            index = pending.pop(message.get("id"), None)
+            if index is not None:
+                events[index]["response"] = message.get("result", message.get("error"))
+    return events
+
+
+def _contains_subset(value, subset) -> bool:
+    if isinstance(subset, dict):
+        return isinstance(value, dict) and all(
+            key in value and _contains_subset(value[key], expected)
+            for key, expected in subset.items()
+        )
+    if isinstance(subset, list):
+        return isinstance(value, list) and value == subset
+    return value == subset
+
+
+def _response_payload(response):
+    if not isinstance(response, dict):
+        return response
+    content = response.get("content", [])
+    if not content or not isinstance(content[0], dict):
+        return response
+    text = content[0].get("text")
+    if not isinstance(text, str):
+        return response
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return response
+
+
+_READ_ONLY_FORBIDDEN_TOOLS = (
+    "search_jobs",
+    "fetch_job_description",
+    "manage_blocklist",
+    "submit_job_observations",
+    "sync_cvs",
+    "push_cv_to_drive",
+    "start_application",
+    "record_application",
+    "make_cover_letter",
+    "browser_login",
+    "browser_open",
+    "browser_snapshot",
+    "browser_form",
+    "browser_click",
+    "browser_set",
+    "browser_type",
+    "browser_upload",
+    "browser_press",
+    "browser_wait",
+    "browser_screenshot",
+    "browser_eval",
+    "browser_tabs",
+    "browser_close",
+)
