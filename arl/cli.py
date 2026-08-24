@@ -263,47 +263,88 @@ def _execute_l5_matrix(config, target_contract) -> bool:
         typer.echo("L5 requires existing passing Qwen get_status evidence", err=True)
         return False
 
-    glm_artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
-    glm = ZCodeSubscriptionProvider().run_job_mcp_smoke(target_contract, glm_artifacts)
-    _record_production_check(
-        config,
-        scenario="l5-get-status",
-        provider="zai-coding-plan",
-        model=glm.model,
-        passed=glm.passed,
-        session_id=glm.session_id,
-        trace_id=glm.trace_id,
-        trace_path=glm.trace_path,
-        reason=glm.reason,
-    )
-    typer.echo(
-        f"{'PASS' if glm.passed else 'FAIL'} L5 GLM model={glm.model} "
-        f"trace={glm.trace_path} reason={glm.reason}"
-    )
+    with database.connect() as connection:
+        glm_evidence = connection.execute(
+            """
+            SELECT model, trace_path, reason
+            FROM production_checks
+            WHERE scenario = 'l5-get-status' AND provider = 'zai-coding-plan'
+                AND status = 'pass'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        deepseek_evidence = connection.execute(
+            """
+            SELECT model, trace_path, reason
+            FROM production_checks
+            WHERE scenario = 'l5-get-status' AND status = 'pass'
+                AND reason = 'DSH get_status traced'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
 
-    dsh_artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
-    deepseek = DSHHarness().run_job_mcp_smoke(target_contract, dsh_artifacts)
-    deepseek_provider = deepseek.model.split("/", 1)[0]
-    _record_production_check(
-        config,
-        scenario="l5-get-status",
-        provider=deepseek_provider,
-        model=deepseek.model,
-        passed=deepseek.passed,
-        session_id=deepseek.session_id,
-        trace_id=deepseek.trace_id,
-        trace_path=deepseek.trace_path,
-        reason=deepseek.reason,
-    )
-    typer.echo(
-        f"{'PASS' if deepseek.passed else 'FAIL'} L5 DeepSeek model={deepseek.model} "
-        f"trace={deepseek.trace_path} reason={deepseek.reason}"
-    )
+    if glm_evidence is not None:
+        glm_model = str(glm_evidence["model"])
+        glm_passed = True
+        typer.echo(
+            f"REUSE L5 GLM model={glm_model} trace={glm_evidence['trace_path']}"
+        )
+    else:
+        glm_artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
+        glm = ZCodeSubscriptionProvider().run_job_mcp_smoke(target_contract, glm_artifacts)
+        glm_model = glm.model
+        glm_passed = glm.passed
+        _record_production_check(
+            config,
+            scenario="l5-get-status",
+            provider="zai-coding-plan",
+            model=glm.model,
+            passed=glm.passed,
+            session_id=glm.session_id,
+            trace_id=glm.trace_id,
+            trace_path=glm.trace_path,
+            reason=glm.reason,
+        )
+        typer.echo(
+            f"{'PASS' if glm.passed else 'FAIL'} L5 GLM model={glm.model} "
+            f"trace={glm.trace_path} reason={glm.reason}"
+        )
+
+    if deepseek_evidence is not None:
+        deepseek_model = str(deepseek_evidence["model"])
+        deepseek_passed = True
+        typer.echo(
+            "REUSE L5 DeepSeek "
+            f"model={deepseek_model} trace={deepseek_evidence['trace_path']}"
+        )
+    else:
+        dsh_artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
+        deepseek = DSHHarness().run_job_mcp_smoke(target_contract, dsh_artifacts)
+        deepseek_model = deepseek.model
+        deepseek_passed = deepseek.passed
+        deepseek_provider = deepseek.model.split("/", 1)[0]
+        _record_production_check(
+            config,
+            scenario="l5-get-status",
+            provider=deepseek_provider,
+            model=deepseek.model,
+            passed=deepseek.passed,
+            session_id=deepseek.session_id,
+            trace_id=deepseek.trace_id,
+            trace_path=deepseek.trace_path,
+            reason=deepseek.reason,
+        )
+        typer.echo(
+            f"{'PASS' if deepseek.passed else 'FAIL'} L5 DeepSeek "
+            f"model={deepseek.model} trace={deepseek.trace_path} reason={deepseek.reason}"
+        )
 
     cells = (
         ("qwen3.8-27b", "zcode", "pass"),
-        (glm.model, "zcode", "pass" if glm.passed else "fail"),
-        (deepseek.model, "dsh", "pass" if deepseek.passed else "fail"),
+        (glm_model, "zcode", "pass" if glm_passed else "fail"),
+        (deepseek_model, "dsh", "pass" if deepseek_passed else "fail"),
     )
     with database.connect() as connection:
         for model, harness, status in cells:
@@ -331,7 +372,7 @@ def _execute_l5_matrix(config, target_contract) -> bool:
             indent=2,
         )
     )
-    return glm.passed and deepseek.passed
+    return glm_passed and deepseek_passed
 
 
 @app.command()
