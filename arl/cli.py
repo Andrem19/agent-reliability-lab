@@ -14,6 +14,7 @@ from arl.benchmark.mutations import run_mutation_suite
 from arl.config import load_config
 from arl.diagnosis.patterns import FailurePattern, PatternLibrary, TwoPassDiagnosis
 from arl.doctor import doctor_ok, run_doctor
+from arl.engines.chaos import ChaosKind, run_live_chaos_control, run_live_chaos_suite
 from arl.engines.direct import run_direct_scenario
 from arl.engines.live_fuzz import run_live_schema_fuzz
 from arl.engines.security import run_live_firewall_probe
@@ -375,6 +376,56 @@ def _execute_l5_matrix(config, target_contract) -> bool:
     return glm_passed and deepseek_passed
 
 
+def _execute_l6_soak(
+    config,
+    target_contract,
+    *,
+    hours: float | None,
+    cycles: int | None,
+    interval_seconds: float,
+    resume_state=None,
+):
+    kinds = list(ChaosKind)
+
+    def run_cycle(cycle_number: int) -> bool:
+        if cycle_number % 8 == 0:
+            artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
+            result = ZCodeHarness().run_error_recovery(target_contract, artifacts)
+            typer.echo(
+                f"{'PASS' if result.passed else 'FAIL'} L6 kind=qwen_recovery "
+                f"trace={result.trace_path} reason={result.reason}"
+            )
+            return result.passed
+        kind = kinds[(cycle_number - 1) % len(kinds)]
+        result = asyncio.run(run_live_chaos_control(config, target_contract, kind))
+        typer.echo(
+            f"{'PASS' if result.passed else 'FAIL'} L6 kind={kind.value} "
+            f"injection={result.injection_id} recovery={result.recovery_passed} "
+            f"trace={result.fault_trace}"
+        )
+        return result.passed
+
+    runner = SoakRunner(config.paths.state_dir / "l6-chaos-soak.json")
+    state = runner.run(
+        run_cycle,
+        hours=hours,
+        max_cycles=cycles,
+        interval_seconds=interval_seconds,
+        metadata={
+            "target": target_contract.name,
+            "scenario": "chaos-recovery",
+            "layers": "L6",
+            "interval_seconds": interval_seconds,
+        },
+        resume_from=resume_state,
+    )
+    typer.echo(
+        f"L6 SOAK {state.status.upper()} cycles={state.completed_cycles} "
+        f"failures={state.failures} elapsed={state.elapsed_seconds:.2f}s"
+    )
+    return state
+
+
 @app.command()
 def version() -> None:
     """Print the ARL version."""
@@ -461,10 +512,26 @@ def run(
     selected_layers = {item.strip().upper() for item in layers.split(",")}
     if cycles is not None and hours is not None:
         raise typer.BadParameter("choose either --cycles or --hours")
-    if selected_layers not in ({"L2"}, {"L3"}, {"L4"}, {"L5"}):
-        raise typer.BadParameter("accepted vertical slices are L2, L3, L4, or L5")
+    if selected_layers not in ({"L2"}, {"L3"}, {"L4"}, {"L5"}, {"L6"}):
+        raise typer.BadParameter("accepted vertical slices are L2, L3, L4, L5, or L6")
     config = load_config()
     target_contract = TargetRegistry(config.paths.targets_dir).get(target)
+    if selected_layers == {"L6"}:
+        if target != "job-search" or scenario not in {"echo", "chaos-recovery"}:
+            raise typer.BadParameter("L6 is defined as job-search/chaos-recovery")
+        effective_interval = (
+            interval_seconds if interval_seconds is not None else (300.0 if hours else 0.0)
+        )
+        state = _execute_l6_soak(
+            config,
+            target_contract,
+            cycles=None if hours is not None else (cycles or 1),
+            hours=hours,
+            interval_seconds=effective_interval,
+        )
+        if state.failures:
+            raise typer.Exit(1)
+        return
     if selected_layers == {"L5"}:
         if target != "job-search" or scenario not in {"echo", "get-status"}:
             raise typer.BadParameter("L5 is defined as job-search/get-status")
@@ -634,6 +701,35 @@ def resume() -> None:
         raise typer.Exit(1)
 
 
+@app.command("resume-l6")
+def resume_l6() -> None:
+    config = load_config()
+    checkpoint = config.paths.state_dir / "l6-chaos-soak.json"
+    if not checkpoint.exists():
+        typer.echo("no persisted L6 soak checkpoint", err=True)
+        raise typer.Exit(1)
+    runner = SoakRunner(checkpoint)
+    saved = runner.load()
+    if saved.status == "completed":
+        typer.echo("L6 checkpoint already completed")
+        return
+    metadata = saved.metadata or {}
+    if metadata.get("layers") != "L6" or not metadata.get("target"):
+        typer.echo("checkpoint lacks a resumable L6 run specification", err=True)
+        raise typer.Exit(1)
+    target_contract = TargetRegistry(config.paths.targets_dir).get(metadata["target"])
+    state = _execute_l6_soak(
+        config,
+        target_contract,
+        hours=None,
+        cycles=None,
+        interval_seconds=float(metadata.get("interval_seconds", 0)),
+        resume_state=saved,
+    )
+    if state.failures:
+        raise typer.Exit(1)
+
+
 @app.command()
 def stop() -> None:
     config = load_config()
@@ -660,6 +756,34 @@ def report() -> None:
         build_report(Database(config.paths.state_dir / "arl.db")), config.paths.reports_dir
     )
     typer.echo(f"markdown={paths[0]} json={paths[1]}")
+
+
+@app.command("chaos-control")
+def chaos_control(target_name: str = "job-search") -> None:
+    """Run one proxy-confirmed L6 fault and clean recovery per chaos kind."""
+    config = load_config()
+    target = TargetRegistry(config.paths.targets_dir).get(target_name)
+    results = asyncio.run(run_live_chaos_suite(config, target))
+    typer.echo(
+        json.dumps(
+            [
+                {
+                    "kind": result.kind.value,
+                    "injection_id": result.injection_id,
+                    "status": "pass" if result.passed else "fail",
+                    "fault_observed": result.fault_observed,
+                    "recovery_passed": result.recovery_passed,
+                    "fault_trace": str(result.fault_trace),
+                    "recovery_trace": str(result.recovery_trace),
+                    "attribution": result.attribution.value,
+                }
+                for result in results
+            ],
+            indent=2,
+        )
+    )
+    if not all(result.passed for result in results):
+        raise typer.Exit(1)
 
 
 @app.command()
