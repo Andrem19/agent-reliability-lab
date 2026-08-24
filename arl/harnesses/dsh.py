@@ -59,15 +59,19 @@ class DSHHarness:
         ]
         return [
             {
-                "id": "mcp-work-researcher",
-                "name": "@deepseek-ai/dsh-mcp-client",
-                "config": {
-                    "serverName": target.topology[0].name,
-                    "transport": "stdio",
-                    "command": sys.executable,
-                    "args": proxy_args,
-                    "toolCallTimeoutMs": 180000,
-                },
+                "insert": [
+                    {
+                        "id": "mcp-work-researcher",
+                        "name": "@deepseek-ai/dsh-mcp-client",
+                        "config": {
+                            "serverName": target.topology[0].name,
+                            "transport": "stdio",
+                            "command": sys.executable,
+                            "args": proxy_args,
+                            "toolCallTimeoutMs": 180000,
+                        },
+                    }
+                ]
             }
         ]
 

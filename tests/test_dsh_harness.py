@@ -14,7 +14,7 @@ def test_dsh_patch_routes_mcp_through_trace_proxy(tmp_path, monkeypatch) -> None
     patch = DSHHarness(executable="dsh.cmd")._patch_config(
         target, tmp_path / "trace.jsonl", "trace-id"
     )
-    row = patch[0]
+    row = patch[0]["insert"][0]
     args = row["config"]["args"]
     separator = args.index("--")
 
