@@ -178,7 +178,7 @@ async def run_live_chaos_control(
     root = config.paths.state_dir / "artifacts" / injection_id
     fault_trace = root / "fault-trace.jsonl"
     recovery_trace = root / "recovery-trace.jsonl"
-    timeout = 0.05 if kind is ChaosKind.LATENCY else 3.0
+    timeout = 0.5 if kind is ChaosKind.LATENCY else 3.0
     started = time.monotonic()
     fault_result: Any = None
     fault_error = ""

@@ -283,7 +283,7 @@ def proxy(
     chaos_kind: ChaosKind | None = None,
     chaos_id: str = "",
     chaos_tool: str = "get_status",
-    chaos_delay_seconds: float = 0.25,
+    chaos_delay_seconds: float = 1.0,
     chaos_huge_bytes: int = 262_144,
 ) -> int:
     if not command:
@@ -356,7 +356,7 @@ def main() -> None:
     parser.add_argument("--chaos-kind", choices=[item.value for item in ChaosKind])
     parser.add_argument("--chaos-id", default="")
     parser.add_argument("--chaos-tool", default="get_status")
-    parser.add_argument("--chaos-delay-seconds", type=float, default=0.25)
+    parser.add_argument("--chaos-delay-seconds", type=float, default=1.0)
     parser.add_argument("--chaos-huge-bytes", type=int, default=262_144)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
