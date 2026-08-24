@@ -1,0 +1,6 @@
+evidence:
+  failure: true
+  failure_signal: protocol_error
+  original_direct: fail
+  valid_direct: fail
+  repeats: [fail, fail, fail]

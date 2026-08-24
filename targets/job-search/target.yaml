@@ -1,0 +1,37 @@
+name: job-search
+target_type: mcp
+access_mode: white_box
+topology:
+  - name: work-researcher
+    server:
+      repo: ../WORK_RESEARCHER_MCP
+      transport: stdio
+      command: uv
+      args: [run, --directory, ../WORK_RESEARCHER_MCP, work-researcher, serve, --transport, stdio]
+    trace_method: stdio_proxy
+executor:
+  harness: zcode
+  model: qwen3.8-27b
+references:
+  - harness: dsh
+    model: deepseek/deepseek-v4-pro
+environment:
+  adapter: web_proxy
+  default_mode: safe_live
+  record: true
+safety:
+  irreversible_tools: [record_application]
+  daily_submit_limit: 0
+layers:
+  protocol: true
+  direct: true
+  fuzz: true
+  agent: true
+  cross: true
+  chaos: true
+  security: true
+repair:
+  enabled: true
+  staging_branch: autotune/staging
+oracle:
+  min_ground_truth_for_repair: curated

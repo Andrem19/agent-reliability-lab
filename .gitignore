@@ -1,0 +1,57 @@
+# Python environments and caches
+.venv/
+.venv-*/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build and packaging output
+dist/
+build/
+*.egg-info/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+token*.json
+.zcode/config.json
+.zcode/config.local.json
+
+# ARL runtime state and generated evidence
+.arl/
+artifacts/
+reports/runtime/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.jsonl
+*.log
+
+# IDE and operating-system metadata
+.idea/
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+~$*

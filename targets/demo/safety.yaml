@@ -1,0 +1,9 @@
+default_mode: safe_live
+risk_overrides:
+  echo: READ
+  add: READ
+  submit_demo: EXTERNAL_SUBMIT
+irreversible_tools:
+  - submit_demo
+limits:
+  submit_demo_per_day: 0

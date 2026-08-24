@@ -1,0 +1,11 @@
+mutations:
+  - id: MUT-001
+    fixture: 001.yaml
+  - id: MUT-002
+    fixture: 002.yaml
+  - id: MUT-003
+    fixture: 003.yaml
+  - id: MUT-004
+    fixture: 004.yaml
+  - id: MUT-005
+    fixture: 005.yaml

@@ -1,0 +1,7 @@
+evidence:
+  failure: true
+  failure_signal: semantic_mismatch
+  original_direct: fail
+  valid_direct: fail
+  mock: fail
+  repeats: [fail, fail, fail]

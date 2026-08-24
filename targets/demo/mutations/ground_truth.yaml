@@ -1,0 +1,7 @@
+# This file is imported only into mutation_ground_truth. EvidenceBuilder must never read it.
+mutations:
+  MUT-001: {category: protocol, attribution: MCP_PROTOCOL, repair_domain: MCP_CODE}
+  MUT-002: {category: schema, attribution: MCP_SCHEMA, repair_domain: MCP_SCHEMA}
+  MUT-003: {category: logic, attribution: MCP_LOGIC, repair_domain: MCP_CODE}
+  MUT-004: {category: description, attribution: TOOL_METADATA, repair_domain: TOOL_METADATA}
+  MUT-005: {category: oracle, attribution: ORACLE_ERROR, repair_domain: ORACLE}

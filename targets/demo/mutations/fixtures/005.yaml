@@ -1,0 +1,6 @@
+evidence:
+  failure: true
+  original_direct: pass
+  primary_oracle: fail
+  independent_oracle: pass
+  repeats: [fail, fail, fail]

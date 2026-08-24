@@ -1,0 +1,11 @@
+default_mode: safe_live
+risk_overrides:
+  search_jobs: READ
+  get_job: READ
+  browser_set: WRITE
+  browser_type: WRITE
+  record_application: EXTERNAL_SUBMIT
+irreversible_tools:
+  - record_application
+limits:
+  record_application_per_day: 0

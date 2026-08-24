@@ -1,0 +1,30 @@
+paths:
+  state_dir: .arl
+  targets_dir: targets
+  reports_dir: reports/runtime
+timeouts:
+  process_seconds: 60
+  doctor_seconds: 5
+default_safety_mode: safe_live
+reference_target_repo: ../WORK_RESEARCHER_MCP
+providers:
+  opencode_go:
+    kind: openai_compatible
+    base_url: https://opencode.ai/zen/go/v1
+    auth_env: OPENCODE_GO_API_KEY
+  command_code:
+    kind: openai_compatible
+    base_url: https://api.commandcode.ai/provider/v1
+    auth_env: COMMAND_CODE_API_KEY
+  zai:
+    kind: zcode_subscription
+roles:
+  evaluator:
+    primary: {provider: opencode_go, model: deepseek-v4-flash}
+    fallback: [{provider: command_code, model: deepseek-v4-flash}]
+  debugger:
+    primary: {provider: opencode_go, model: deepseek-v4-pro}
+    fallback: [{provider: command_code, model: deepseek-v4-pro}]
+  critic:
+    primary: {provider: zai, model: GLM-5.3}
+    escalation_only: true

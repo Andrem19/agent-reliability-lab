@@ -1,0 +1,6 @@
+evidence:
+  failure: true
+  failure_signal: schema_accepts_invalid
+  original_direct: fail
+  valid_direct: pass
+  repeats: [fail, fail, fail]

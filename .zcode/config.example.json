@@ -1,0 +1,47 @@
+{
+  "provider": {
+    "arl-lmstudio": {
+      "name": "ARL LM Studio",
+      "kind": "openai-compatible",
+      "options": {
+        "apiKey": "not-required",
+        "baseURL": "http://127.0.0.1:1234/v1",
+        "apiKeyRequired": false
+      },
+      "enabled": true,
+      "source": "project",
+      "models": {
+        "qwen3.8-27b": {
+          "limit": {
+            "context": 78080,
+            "output": 8192
+          },
+          "modalities": {
+            "input": ["text"],
+            "output": ["text"]
+          }
+        }
+      }
+    }
+  },
+  "model": {
+    "main": "arl-lmstudio/qwen3.8-27b"
+  },
+  "mcp": {
+    "servers": {
+      "work-researcher": {
+        "type": "stdio",
+        "command": "uv",
+        "args": [
+          "run",
+          "--directory",
+          "/absolute/path/to/your-mcp",
+          "your-mcp-command",
+          "serve",
+          "--transport",
+          "stdio"
+        ]
+      }
+    }
+  }
+}

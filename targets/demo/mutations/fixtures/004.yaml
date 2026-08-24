@@ -1,0 +1,9 @@
+evidence:
+  failure: true
+  original_direct: pass
+  agent_original: fail
+  executor_model: fail
+  reference_models: pass
+  interaction: executor_harness_only
+  description_swap: pass
+  repeats: [fail, fail, fail]

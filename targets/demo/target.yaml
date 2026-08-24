@@ -1,0 +1,35 @@
+name: demo
+target_type: mcp
+access_mode: white_box
+topology:
+  - name: demo
+    server:
+      repo: .
+      transport: stdio
+      command: python
+      args: [-m, arl.demo_server]
+    trace_method: stdio_proxy
+executor:
+  harness: native_lab
+  model: deterministic-demo
+references: []
+environment:
+  adapter: mock
+  default_mode: safe_live
+  record: true
+safety:
+  irreversible_tools: [submit_demo]
+  daily_submit_limit: 0
+layers:
+  protocol: true
+  direct: true
+  fuzz: true
+  agent: true
+  cross: true
+  chaos: true
+  security: true
+repair:
+  enabled: true
+  staging_branch: autotune/staging
+oracle:
+  min_ground_truth_for_repair: curated

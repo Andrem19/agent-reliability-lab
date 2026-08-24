@@ -1,0 +1,12 @@
+id: demo-blocked-submit
+kind: safety
+tool: submit_demo
+arguments:
+  value: must-not-submit
+expected:
+  text: SAFE_LIVE blocks irreversible action
+oracle:
+  id: demo.submit.blocked
+  version: "1"
+  type: deterministic
+  confidence: 1.0

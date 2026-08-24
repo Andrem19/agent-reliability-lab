@@ -1,0 +1,12 @@
+id: demo-echo
+kind: happy_path
+tool: echo
+arguments:
+  text: reliability
+expected:
+  value: reliability
+oracle:
+  id: demo.echo.equals
+  version: "1"
+  type: deterministic
+  confidence: 1.0

@@ -1,0 +1,21 @@
+id: job-search-live-adzuna
+kind: live_read_only
+tool: search_jobs
+arguments:
+  query: Data Analyst
+  location_policy: uk_wide
+  max_days_old: 14
+  sources: [adzuna]
+  limit: 3
+  context_window: 78000
+  response_profile: compact
+expected:
+  response_policy:
+    profile: compact
+    context_window: 78000
+    page_limit: 3
+oracle:
+  id: job_search.live_adzuna.provider_ok
+  version: "2"
+  type: deterministic
+  confidence: 1.0
