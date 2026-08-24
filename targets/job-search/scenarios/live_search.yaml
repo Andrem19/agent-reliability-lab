@@ -2,9 +2,11 @@ id: job-search-live-adzuna
 kind: live_read_only
 tool: search_jobs
 arguments:
-  query: Data Analyst
+  query: Analyst
   location_policy: uk_wide
   max_days_old: 14
+  drop_mismatch: false
+  drop_req_gap: false
   sources: [adzuna]
   limit: 3
   context_window: 78000
