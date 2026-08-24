@@ -15,6 +15,7 @@ from arl.config import load_config
 from arl.diagnosis.patterns import FailurePattern, PatternLibrary, TwoPassDiagnosis
 from arl.doctor import doctor_ok, run_doctor
 from arl.engines.direct import run_direct_scenario
+from arl.engines.live_fuzz import run_live_schema_fuzz
 from arl.engines.security import run_live_firewall_probe
 from arl.harnesses.zcode import ZCodeHarness
 from arl.isolation.hypotheses import HypothesisEngine
@@ -124,6 +125,59 @@ def _execute_l2_soak(
     return state
 
 
+def _execute_l3_soak(
+    config,
+    target_contract,
+    *,
+    cycles: int | None,
+    hours: float | None,
+    interval_seconds: float,
+    resume_state=None,
+):
+    def run_cycle(_: int) -> bool:
+        artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
+        result = asyncio.run(
+            run_live_schema_fuzz(target_contract, artifacts / "l3-schema-fuzz-trace.jsonl")
+        )
+        typer.echo(
+            f"{'PASS' if result.passed else 'FAIL'} L3 cases={result.successes}/{result.total} "
+            f"trace={result.trace_path}"
+        )
+        _record_production_check(
+            config,
+            scenario="l3-schema-fuzz",
+            provider="direct-mcp-sdk",
+            model="none",
+            passed=result.passed,
+            session_id=None,
+            trace_id=result.trace_id,
+            trace_path=result.trace_path,
+            reason=result.reason,
+        )
+        return result.passed
+
+    runner = SoakRunner(config.paths.state_dir / "soak.json")
+    metadata = {
+        "target": target_contract.name,
+        "scenario": "schema-fuzz",
+        "layers": "L3",
+        "interval_seconds": interval_seconds,
+    }
+    state = runner.run(
+        run_cycle,
+        hours=hours,
+        max_cycles=cycles,
+        interval_seconds=interval_seconds,
+        metadata=metadata,
+        resume_from=resume_state,
+    )
+    typer.echo(
+        f"L3 SOAK {state.status.upper()} cycles={state.completed_cycles} "
+        f"failures={state.failures} elapsed={state.elapsed_seconds:.2f}s"
+    )
+    return state
+
+
 @app.command()
 def version() -> None:
     """Print the ARL version."""
@@ -210,8 +264,8 @@ def run(
     selected_layers = {item.strip().upper() for item in layers.split(",")}
     if cycles is not None and hours is not None:
         raise typer.BadParameter("choose either --cycles or --hours")
-    if selected_layers not in ({"L2"}, {"L4"}):
-        raise typer.BadParameter("accepted vertical slices are L2 or L4")
+    if selected_layers not in ({"L2"}, {"L3"}, {"L4"}):
+        raise typer.BadParameter("accepted vertical slices are L2, L3, or L4")
     config = load_config()
     target_contract = TargetRegistry(config.paths.targets_dir).get(target)
     if selected_layers == {"L4"}:
@@ -273,6 +327,21 @@ def run(
     effective_interval = (
         interval_seconds if interval_seconds is not None else (60.0 if hours else 0.0)
     )
+    if selected_layers == {"L3"}:
+        if target != "job-search":
+            raise typer.BadParameter("live L3 schema fuzz is defined for job-search")
+        if scenario not in {"echo", "schema-fuzz"}:
+            raise typer.BadParameter("L3 scenario must be schema-fuzz")
+        state = _execute_l3_soak(
+            config,
+            target_contract,
+            cycles=None if hours is not None else (cycles or 1),
+            hours=hours,
+            interval_seconds=effective_interval,
+        )
+        if state.failures:
+            raise typer.Exit(1)
+        return
     state = _execute_l2_soak(
         config,
         target_contract,
@@ -298,19 +367,29 @@ def resume() -> None:
         typer.echo("checkpoint already completed")
         return
     metadata = saved.metadata or {}
-    if metadata.get("layers") != "L2" or not metadata.get("target"):
-        typer.echo("checkpoint lacks a resumable L2 run specification", err=True)
+    if metadata.get("layers") not in {"L2", "L3"} or not metadata.get("target"):
+        typer.echo("checkpoint lacks a resumable L2/L3 run specification", err=True)
         raise typer.Exit(1)
     target_contract = TargetRegistry(config.paths.targets_dir).get(metadata["target"])
-    state = _execute_l2_soak(
-        config,
-        target_contract,
-        scenario=metadata.get("scenario", "echo"),
-        cycles=None,
-        hours=None,
-        interval_seconds=float(metadata.get("interval_seconds", 0)),
-        resume_state=saved,
-    )
+    if metadata["layers"] == "L3":
+        state = _execute_l3_soak(
+            config,
+            target_contract,
+            cycles=None,
+            hours=None,
+            interval_seconds=float(metadata.get("interval_seconds", 0)),
+            resume_state=saved,
+        )
+    else:
+        state = _execute_l2_soak(
+            config,
+            target_contract,
+            scenario=metadata.get("scenario", "echo"),
+            cycles=None,
+            hours=None,
+            interval_seconds=float(metadata.get("interval_seconds", 0)),
+            resume_state=saved,
+        )
     if state.failures:
         raise typer.Exit(1)
 

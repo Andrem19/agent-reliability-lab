@@ -22,7 +22,7 @@ ARL currently provides:
 - hypothesis ranking, counterfactual model×harness matrices, provider fallback/circuit breakers;
 - scoped worktree repair, regression, recorded/live replay, and staging integration;
 - ZCode/Qwen production harness with a trace-path side-effect firewall;
-- schema fuzzing, chaos classification, evidence provenance/anti-injection, metamorphic and differential checks;
+- unit and live MCP schema fuzzing, chaos classification, evidence provenance/anti-injection, metamorphic and differential checks;
 - capability graphs, synthesized-scenario lint, coverage scheduling, two-pass failure patterns, and checkpointed soak execution.
 
 Native Z.ai Coding Plan / GLM-5.3 escalation, Qwen's production read-only Job MCP
@@ -45,6 +45,7 @@ uv run arl targets list
 uv run arl targets inspect demo
 uv run arl demo --baseline
 uv run arl run demo --cycles 10 --layers L2
+uv run arl run job-search --cycles 1 --layers L3 --scenario schema-fuzz
 uv run arl run demo --hours 24 --layers L2
 uv run arl status
 uv run arl regress job-search

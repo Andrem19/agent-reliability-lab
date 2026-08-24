@@ -1,5 +1,6 @@
 from arl.engines.chaos import ChaosEvidence, ChaosKind, attribute_chaos, inject_message
 from arl.engines.fuzz import FuzzOutcome, assert_safe_fuzz_target, run_fuzz, schema_cases
+from arl.engines.live_fuzz import schema_fuzz_cases
 from arl.engines.metamorphic import compare_paraphrases, differential
 from arl.isolation.hypotheses import Hypothesis
 from arl.safety.risk_class import RiskClass
@@ -34,6 +35,28 @@ def test_high_risk_fuzz_requires_mock_or_sandbox() -> None:
     else:
         raise AssertionError("live fuzz must be blocked")
     assert_safe_fuzz_target({RiskClass.EXTERNAL_SUBMIT}, "mock")
+
+
+def test_live_schema_fuzz_cases_have_valid_baseline_and_invalid_boundaries() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "query": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            "limit": {"type": "integer"},
+            "profile": {"type": "string", "enum": ["compact", "wide"]},
+        },
+        "required": ["query"],
+    }
+
+    cases = schema_fuzz_cases(schema)
+
+    assert cases[0].valid and cases[0].arguments == {"query": "arl-fuzz"}
+    assert any(case.name == "query:missing" and not case.valid for case in cases)
+    assert any(
+        case.name == "profile:wrong_type_or_enum"
+        and case.arguments["profile"] == "__arl_invalid_enum__"
+        for case in cases
+    )
 
 
 def test_injection_canary_is_data_and_never_executed() -> None:
