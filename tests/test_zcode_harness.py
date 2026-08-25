@@ -30,6 +30,30 @@ def test_zcode_workspace_uses_absolute_server_paths(tmp_path, monkeypatch) -> No
     assert directory.name == "WORK_RESEARCHER_MCP"
 
 
+def test_zcode_browser_workspace_has_origin_and_environment_firewalls(
+    tmp_path, monkeypatch
+) -> None:
+    config = load_config()
+    target = TargetRegistry(config.paths.targets_dir).get("job-search")
+    monkeypatch.setattr("arl.harnesses.zcode.shutil.which", lambda _: "C:/tools/uv.exe")
+
+    workspace_config = ZCodeHarness()._workspace_config(
+        target,
+        tmp_path,
+        tmp_path / "trace.jsonl",
+        "trace-id",
+        server_env={"WORK_RESEARCHER_CONFIG": "C:/isolated/config.toml"},
+        browser_allowed_origins=("http://127.0.0.1:8765",),
+        extra_irreversible_tools=("browser_eval",),
+    )
+    server = workspace_config["mcp"]["servers"]["work-researcher"]
+
+    assert server["env"]["WORK_RESEARCHER_CONFIG"].endswith("config.toml")
+    assert server["args"].count("--browser-allow-origin") == 1
+    assert "http://127.0.0.1:8765" in server["args"]
+    assert "browser_eval" in server["args"]
+
+
 def test_trace_events_pair_arguments_and_responses(tmp_path) -> None:
     trace = tmp_path / "trace.jsonl"
     records = [

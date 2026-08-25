@@ -7,6 +7,7 @@ from arl.engines.direct import run_direct_scenario
 from arl.safety.firewall import SideEffectFirewall
 from arl.safety.risk_class import RiskClass, classify_tool
 from arl.targets.registry import TargetRegistry
+from arl.tracing.stdio_proxy import browser_url_allowed
 
 
 def test_safe_live_blocks_irreversible_for_demo_and_job_search() -> None:
@@ -21,6 +22,15 @@ def test_safe_live_blocks_irreversible_for_demo_and_job_search() -> None:
         decision = firewall.decide(tool, classify_tool(tool))
         assert not decision.allowed
         assert RiskClass.EXTERNAL_SUBMIT in decision.risks
+
+
+def test_browser_origin_firewall_uses_exact_origin() -> None:
+    allowed = {"http://127.0.0.1:8765"}
+
+    assert browser_url_allowed("http://127.0.0.1:8765/apply?run=1", allowed)
+    assert not browser_url_allowed("http://127.0.0.1:8766/apply", allowed)
+    assert not browser_url_allowed("https://example.com/apply", allowed)
+    assert not browser_url_allowed("file:///etc/passwd", allowed)
 
 
 @pytest.mark.asyncio

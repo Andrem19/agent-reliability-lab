@@ -12,11 +12,12 @@ This file distinguishes executable evidence from pending external or elapsed-tim
 | M5 | PASS | Transport-only fallback/circuit breaker, automatic model×harness interaction detection, Streamable HTTP client path, protocol compatibility matrix, and real native Z.ai Coding Plan / GLM-5.3 execution. |
 | M6 | PASS | Boundary fuzz crash detection, high-risk live-fuzz block, injection canary neutralization and proxy-confirmed chaos attribution. |
 | M7 | PASS | Capability graph, synthesis lint, coverage scheduler, persistent two-pass pattern reuse, kill/resume recovery, and a literal 7243-second Job Search MCP soak: 24/24 PASS with zero failures. |
+| L7 Browser Agent | PARTIAL PASS | Direct local-browser gate 4/4 PASS with MCP + Playwright evidence. Qwen/ZCode agent gate is implemented and remains the next explicit launch. |
 
 ## Latest verification
 
 - `uv run ruff check .`: PASS.
-- `uv run pytest -q`: 49 passed.
+- `uv run pytest -q`: 54 passed.
 - `uv run arl demo --suite`: top-1/top-3 1.0, false repair rate 0.0.
 - Qwen/ZCode/Job MCP read-only workflow: `get_status → list_stored_jobs → get_job → check_applied`, PASS with no forbidden calls.
 - Native Z.ai Coding Plan / GLM-5.3 escalation called proxied Job MCP `get_status`, PASS.
@@ -49,6 +50,11 @@ This file distinguishes executable evidence from pending external or elapsed-tim
   `get_status` recovery, and three local-Qwen recovery controls passed. The run
   used 21 unique injection IDs, 12 allowed Qwen tool calls, and zero forbidden
   application, submit, browser, sync, push, or write calls.
+- Bounded L7 direct browser gate: happy path, stale-DOM recovery, expired-session
+  recovery and CAPTCHA safe-stop all PASS against the loopback job board. Every
+  run used an isolated browser profile and produced MCP JSONL plus Playwright trace
+  evidence. The gate found and repaired a real modal/background element-number
+  collision in the Work Researcher browser layer.
 - Runtime reports: `.arl` metadata to `reports/runtime/report.md` and `report.json`.
 
 ## Optional extended evidence

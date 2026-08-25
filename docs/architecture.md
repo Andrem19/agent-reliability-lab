@@ -28,7 +28,10 @@ real elapsed time rather than an accelerated or mocked clock.
 - `arl.repair.worktree`: validated repository-root and worktree-root operations. It
   never writes directly to the target's main worktree.
 - `arl.engines`: direct SDK execution, fuzz, chaos, protocol compatibility,
-  metamorphic and differential checks.
+  metamorphic and differential checks, plus L7 direct/browser-agent execution.
+- `arl.browser_lab`: loopback-only deterministic job board, observable environment
+  state, and controlled stale-DOM/session/CAPTCHA conditions for the embedded
+  Work Researcher Playwright browser.
 - `arl.isolation`: scored hypotheses, deterministic experiment planning, and
   counterfactual matrices.
 - `arl.providers`: transport-aware fallback and circuit breaking; reasoning failures
@@ -52,6 +55,8 @@ vertical slices (M1/M4/M5), using the actual discovered CLI/protocol contracts.
 5. Worktree creation validates the exact Git root and a single configured child path.
 6. Production Qwen unavailability is `test_infra_unavailable`, not a fallback trigger.
 7. Mutation ground truth is stored separately and cannot enter diagnostic evidence.
+8. L7 uses an isolated browser profile and exact loopback origin firewall; production
+   job-board navigation and `browser_eval` are blocked.
 
 ## Acceptance status
 

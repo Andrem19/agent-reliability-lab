@@ -9,6 +9,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, BinaryIO
+from urllib.parse import urlsplit
 
 from arl.engines.chaos import ChaosKind
 from arl.safety.firewall import SideEffectFirewall
@@ -204,6 +205,18 @@ class ChaosInjector:
         return (json.dumps(replacement, separators=(",", ":")) + "\n").encode()
 
 
+def browser_url_allowed(url: str, allowed_origins: set[str]) -> bool:
+    """Require an exact HTTP(S) origin match for browser navigation tools."""
+    if not allowed_origins:
+        return True
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    default_port = 443 if parsed.scheme == "https" else 80
+    origin = f"{parsed.scheme}://{parsed.hostname.casefold()}:{parsed.port or default_port}"
+    return origin in allowed_origins
+
+
 def _relay(
     source: BinaryIO,
     destination: BinaryIO,
@@ -242,6 +255,7 @@ def _relay_stdin(
     sink: TraceSink,
     firewall: SideEffectFirewall,
     chaos: ChaosInjector | None = None,
+    browser_allowed_origins: set[str] | None = None,
 ) -> None:
     try:
         while line := source.readline():
@@ -258,12 +272,23 @@ def _relay_stdin(
             decision = (
                 firewall.decide(tool_name, classify_tool(tool_name)) if is_tool_call else None
             )
+            arguments = params.get("arguments", {}) if isinstance(params, dict) else {}
+            url = arguments.get("url", "") if isinstance(arguments, dict) else ""
+            browser_block_reason = None
+            if (
+                is_tool_call
+                and tool_name in {"browser_open", "browser_login"}
+                and not browser_url_allowed(str(url), browser_allowed_origins or set())
+            ):
+                browser_block_reason = "ARL browser origin firewall blocked navigation"
             if decision is not None and not decision.allowed:
+                browser_block_reason = decision.reason
+            if browser_block_reason is not None:
                 response = {
                     "jsonrpc": "2.0",
                     "id": message.get("id"),
                     "result": {
-                        "content": [{"type": "text", "text": decision.reason}],
+                        "content": [{"type": "text", "text": browser_block_reason}],
                         "isError": True,
                     },
                 }
@@ -290,6 +315,7 @@ def proxy(
     chaos_tool: str = "get_status",
     chaos_delay_seconds: float = 1.0,
     chaos_huge_bytes: int = 262_144,
+    browser_allowed_origins: set[str] | None = None,
 ) -> int:
     if not command:
         raise ValueError("server command is required after --")
@@ -331,7 +357,15 @@ def proxy(
     )
     stdin_thread = threading.Thread(
         target=_relay_stdin,
-        args=(sys.stdin.buffer, process.stdin, sys.stdout.buffer, sink, firewall, chaos),
+        args=(
+            sys.stdin.buffer,
+            process.stdin,
+            sys.stdout.buffer,
+            sink,
+            firewall,
+            chaos,
+            browser_allowed_origins,
+        ),
         daemon=True,
     )
     stdout_thread.start()
@@ -363,6 +397,7 @@ def main() -> None:
     parser.add_argument("--chaos-tool", default="get_status")
     parser.add_argument("--chaos-delay-seconds", type=float, default=1.0)
     parser.add_argument("--chaos-huge-bytes", type=int, default=262_144)
+    parser.add_argument("--browser-allow-origin", action="append", default=[])
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -378,6 +413,7 @@ def main() -> None:
             args.chaos_tool,
             args.chaos_delay_seconds,
             args.chaos_huge_bytes,
+            set(args.browser_allow_origin),
         )
     )
 

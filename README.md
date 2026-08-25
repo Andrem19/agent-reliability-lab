@@ -24,6 +24,9 @@ ARL currently provides:
 - ZCode/Qwen production harness with a trace-path side-effect firewall;
 - unit and live MCP schema fuzzing, chaos classification, evidence provenance/anti-injection, metamorphic and differential checks;
 - capability graphs, synthesized-scenario lint, coverage scheduling, two-pass failure patterns, and checkpointed soak execution.
+- an isolated L7 browser-agent lab with a deterministic local job board, exact-origin
+  navigation firewall, MCP + Playwright traces, stale-DOM/session/CAPTCHA controls,
+  hidden-file upload, modal wizard, and a bounded local-Qwen acceptance path.
 
 Native Z.ai Coding Plan / GLM-5.3 escalation, Qwen's production read-only Job MCP
 workflow, the production firewall, live Adzuna search, and crash/resume have real
@@ -46,6 +49,8 @@ uv run arl targets inspect demo
 uv run arl demo --baseline
 uv run arl run demo --cycles 10 --layers L2
 uv run arl run job-search --cycles 1 --layers L3 --scenario schema-fuzz
+uv run arl run job-search --layers L7 --scenario suite
+uv run arl run job-search --layers L7 --scenario agent
 uv run arl run demo --hours 24 --layers L2
 uv run arl status
 uv run arl regress job-search

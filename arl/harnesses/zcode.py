@@ -52,6 +52,10 @@ class ZCodeHarness:
         workspace: Path,
         trace_path: Path,
         trace_id: str,
+        *,
+        server_env: dict[str, str] | None = None,
+        browser_allowed_origins: tuple[str, ...] = (),
+        extra_irreversible_tools: tuple[str, ...] = (),
     ) -> dict:
         server = target.topology[0].server
         if server.transport != "stdio" or server.command is None:
@@ -64,6 +68,7 @@ class ZCodeHarness:
             if not directory.is_absolute():
                 directory = (Path.cwd() / directory).resolve()
             server_args[directory_index] = str(directory)
+        irreversible_tools = tuple(target.safety.irreversible_tools) + extra_irreversible_tools
         proxy_args = [
             "-m",
             "arl.tracing.stdio_proxy",
@@ -75,13 +80,25 @@ class ZCodeHarness:
             target.environment.default_mode.value,
             *[
                 value
-                for tool in target.safety.irreversible_tools
+                for tool in irreversible_tools
                 for value in ("--irreversible-tool", tool)
+            ],
+            *[
+                value
+                for origin in browser_allowed_origins
+                for value in ("--browser-allow-origin", origin)
             ],
             "--",
             server_command,
             *server_args,
         ]
+        mcp_server = {
+            "type": "stdio",
+            "command": sys.executable,
+            "args": proxy_args,
+        }
+        if server_env:
+            mcp_server["env"] = server_env
         return {
             "provider": {
                 "arl-lmstudio": {
@@ -105,11 +122,7 @@ class ZCodeHarness:
             "model": {"main": f"arl-lmstudio/{target.executor.model}"},
             "mcp": {
                 "servers": {
-                    target.topology[0].name: {
-                        "type": "stdio",
-                        "command": sys.executable,
-                        "args": proxy_args,
-                    }
+                    target.topology[0].name: mcp_server
                 }
             },
         }
@@ -260,6 +273,9 @@ class ZCodeHarness:
         expected_arguments: dict[int, dict] | None = None,
         expected_response_subsets: dict[int, dict] | None = None,
         timeout_seconds: float = 300,
+        server_env: dict[str, str] | None = None,
+        browser_allowed_origins: tuple[str, ...] = (),
+        extra_irreversible_tools: tuple[str, ...] = (),
     ) -> ZCodeRunResult:
         healthy, detail = self.discover(target.executor.model)
         trace_id = new_trace_id()
@@ -271,7 +287,15 @@ class ZCodeHarness:
         workspace = artifacts_dir / "zcode-workspace"
         config_dir = workspace / ".zcode"
         config_dir.mkdir(parents=True, exist_ok=True)
-        config = self._workspace_config(target, workspace, trace_path, trace_id)
+        config = self._workspace_config(
+            target,
+            workspace,
+            trace_path,
+            trace_id,
+            server_env=server_env,
+            browser_allowed_origins=browser_allowed_origins,
+            extra_irreversible_tools=extra_irreversible_tools,
+        )
         (config_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
         isolated_home = workspace / "home"
         isolated_home.mkdir()

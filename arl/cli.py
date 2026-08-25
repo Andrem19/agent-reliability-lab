@@ -14,6 +14,12 @@ from arl.benchmark.mutations import run_mutation_suite
 from arl.config import load_config
 from arl.diagnosis.patterns import FailurePattern, PatternLibrary, TwoPassDiagnosis
 from arl.doctor import doctor_ok, run_doctor
+from arl.engines.browser_agent import (
+    BrowserScenario,
+    run_browser_agent,
+    run_browser_direct,
+    run_browser_direct_suite,
+)
 from arl.engines.chaos import ChaosKind, run_live_chaos_control, run_live_chaos_suite
 from arl.engines.direct import run_direct_scenario
 from arl.engines.live_fuzz import run_live_schema_fuzz
@@ -512,10 +518,75 @@ def run(
     selected_layers = {item.strip().upper() for item in layers.split(",")}
     if cycles is not None and hours is not None:
         raise typer.BadParameter("choose either --cycles or --hours")
-    if selected_layers not in ({"L2"}, {"L3"}, {"L4"}, {"L5"}, {"L6"}):
-        raise typer.BadParameter("accepted vertical slices are L2, L3, L4, L5, or L6")
+    if selected_layers not in ({"L2"}, {"L3"}, {"L4"}, {"L5"}, {"L6"}, {"L7"}):
+        raise typer.BadParameter("accepted vertical slices are L2 through L7")
     config = load_config()
     target_contract = TargetRegistry(config.paths.targets_dir).get(target)
+    if selected_layers == {"L7"}:
+        if target != "job-search":
+            raise typer.BadParameter("L7 browser validation is defined for job-search")
+        if hours is not None or cycles is not None or interval_seconds is not None:
+            raise typer.BadParameter("L7 launch controls are bounded; timed soak comes later")
+        artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
+        if scenario in {"echo", "direct", "suite"}:
+            results = asyncio.run(run_browser_direct_suite(target_contract, artifacts))
+            for result in results:
+                typer.echo(
+                    f"{'PASS' if result.passed else 'FAIL'} L7 direct "
+                    f"scenario={result.scenario.value} trace={result.trace_path} "
+                    f"reason={result.reason}"
+                )
+                _record_production_check(
+                    config,
+                    scenario=f"l7-browser-{result.scenario.value}",
+                    provider="direct-browser-mcp",
+                    model="none",
+                    passed=result.passed,
+                    session_id=None,
+                    trace_id=result.trace_id,
+                    trace_path=result.trace_path,
+                    reason=result.reason,
+                )
+            if not all(result.passed for result in results):
+                raise typer.Exit(1)
+            return
+        if scenario == "agent":
+            result = run_browser_agent(target_contract, artifacts)
+            typer.echo(
+                f"{'PASS' if result.passed else 'FAIL'} L7 agent "
+                f"model={result.model_result.model} trace={result.model_result.trace_path} "
+                f"reason={result.reason}"
+            )
+            _record_production_check(
+                config,
+                scenario="l7-browser-agent",
+                provider="lmstudio",
+                model=result.model_result.model,
+                passed=result.passed,
+                session_id=result.model_result.session_id,
+                trace_id=result.model_result.trace_id,
+                trace_path=result.model_result.trace_path,
+                reason=result.reason,
+            )
+            if not result.passed:
+                raise typer.Exit(1)
+            return
+        try:
+            selected_scenario = BrowserScenario(scenario)
+        except ValueError as exc:
+            raise typer.BadParameter(
+                "L7 scenario must be suite, happy, stale, session, captcha, or agent"
+            ) from exc
+        result = asyncio.run(
+            run_browser_direct(target_contract, artifacts, selected_scenario)
+        )
+        typer.echo(
+            f"{'PASS' if result.passed else 'FAIL'} L7 direct "
+            f"scenario={result.scenario.value} trace={result.trace_path} reason={result.reason}"
+        )
+        if not result.passed:
+            raise typer.Exit(1)
+        return
     if selected_layers == {"L6"}:
         if target != "job-search" or scenario not in {"echo", "chaos-recovery"}:
             raise typer.BadParameter("L6 is defined as job-search/chaos-recovery")

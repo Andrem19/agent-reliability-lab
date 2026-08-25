@@ -30,6 +30,7 @@ layers:
   cross: true
   chaos: true
   security: true
+  browser: true
 repair:
   enabled: true
   staging_branch: autotune/staging
