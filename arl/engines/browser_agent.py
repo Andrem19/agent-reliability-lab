@@ -501,8 +501,14 @@ def run_browser_agent(
             "Apply now, and use the popup application page. Fill Full name='ARL Test Candidate', "
             "Email address='arl@example.test', Location='Blackpool', Preferred work "
             f"mode='remote', upload {str(upload_path)!r}, and check Consent to test submission. "
-            "Click Continue application. Use browser_snapshot(modal_only=true) before every "
-            f"wizard action. {recovery_instruction} Then take a full-page screenshot named "
+            "Before Continue application there is no modal: never request modal_only there. "
+            "On the popup call browser_form exactly once, then chain browser_set and "
+            "browser_upload using the fresh element numbers returned by each preceding action; "
+            "do not re-snapshot between those pre-wizard steps. Click Continue using the fresh "
+            "number in the last action result. After Continue, use "
+            "browser_snapshot(modal_only=true) before "
+            f"every wizard or CAPTCHA action. {recovery_instruction} Then take a full-page "
+            "screenshot named "
             f"'l7-agent-{scenario.value}', list tabs, then close the browser. Never call "
             "browser_eval, "
             "browser_login, search, application-recording, sync, push, shell, or file-writing "
@@ -513,6 +519,7 @@ def run_browser_agent(
             "browser_open",
             "browser_click",
             "browser_snapshot",
+            "browser_form",
             "browser_set",
             "browser_upload",
             "browser_screenshot",
@@ -552,6 +559,7 @@ def run_browser_agent(
                     "browser_open",
                     "browser_click",
                     "browser_snapshot",
+                    "browser_form",
                     "browser_set",
                     "browser_upload",
                     "browser_wait",

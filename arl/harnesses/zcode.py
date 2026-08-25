@@ -142,6 +142,7 @@ class ZCodeHarness:
                 {
                     "plugins": {"enabled": False},
                     "skills": {"enabled": False},
+                    "network": {"timeout": 600000},
                     "permission": {"mode": "yolo", "allowedTools": list(allowed_tools)},
                     "features": {
                         "compact": True,
