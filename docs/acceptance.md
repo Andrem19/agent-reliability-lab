@@ -16,7 +16,7 @@ This file distinguishes executable evidence from pending external or elapsed-tim
 ## Latest verification
 
 - `uv run ruff check .`: PASS.
-- `uv run pytest -q`: 44 passed.
+- `uv run pytest -q`: 49 passed.
 - `uv run arl demo --suite`: top-1/top-3 1.0, false repair rate 0.0.
 - Qwen/ZCode/Job MCP read-only workflow: `get_status → list_stored_jobs → get_job → check_applied`, PASS with no forbidden calls.
 - Native Z.ai Coding Plan / GLM-5.3 escalation called proxied Job MCP `get_status`, PASS.
@@ -44,6 +44,11 @@ This file distinguishes executable evidence from pending external or elapsed-tim
   DSH-selected `deepseek-official/deepseek-v4-flash` all PASS the same proxied
   read-only `get_status` control. GLM used one call; DeepSeek used one failed
   configuration probe and one passing confirmation after the DSH adapter repair.
+- Literal L6 chaos/recovery soak: 7504.703 seconds, 24/24 PASS with zero
+  failures. All seven proxy-injected fault classes passed 3/3 with a clean
+  `get_status` recovery, and three local-Qwen recovery controls passed. The run
+  used 21 unique injection IDs, 12 allowed Qwen tool calls, and zero forbidden
+  application, submit, browser, sync, push, or write calls.
 - Runtime reports: `.arl` metadata to `reports/runtime/report.md` and `report.json`.
 
 ## Optional extended evidence
