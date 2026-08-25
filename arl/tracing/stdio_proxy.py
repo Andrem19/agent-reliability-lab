@@ -145,8 +145,6 @@ class ChaosInjector:
         if not isinstance(params, dict) or params.get("name") != self.tool_name:
             return
         message_id = str(message.get("id"))
-        with self._lock:
-            self._target_ids.add(message_id)
         self.sink.chaos(
             self.injection_id,
             self.kind,
@@ -155,9 +153,14 @@ class ChaosInjector:
             tool_name=self.tool_name,
         )
         if self.kind in {ChaosKind.CONNECTION_DROP, ChaosKind.KILL_SERVER}:
+            with self._lock:
+                self._target_ids.add(message_id)
             self.sink.chaos(self.injection_id, self.kind, "injected", message_id=message_id)
             if self.process is not None:
                 self.process.terminate()
+            return
+        with self._lock:
+            self._target_ids.add(message_id)
 
     def transform_response(self, raw: bytes) -> bytes | None:
         try:
@@ -171,6 +174,8 @@ class ChaosInjector:
             if message_id not in self._target_ids:
                 return raw
             self._target_ids.remove(message_id)
+        if self.kind in {ChaosKind.CONNECTION_DROP, ChaosKind.KILL_SERVER}:
+            return None
         self.sink.chaos(self.injection_id, self.kind, "injected", message_id=message_id)
         if self.kind is ChaosKind.LATENCY:
             time.sleep(self.delay_seconds)

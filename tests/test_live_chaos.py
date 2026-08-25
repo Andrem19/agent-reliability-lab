@@ -33,3 +33,12 @@ def test_huge_result_is_bounded(tmp_path) -> None:
 
     text = json.loads(raw or b"null")["result"]["content"][0]["text"]
     assert len(text) == 1024
+
+
+def test_process_fault_is_recorded_once_even_if_response_races(tmp_path) -> None:
+    injector, sink = _armed_injector(tmp_path, ChaosKind.CONNECTION_DROP)
+    raw = injector.transform_response(b'{"jsonrpc":"2.0","id":7,"result":{}}\n')
+
+    assert raw is None
+    records = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    assert [record["phase"] for record in records] == ["armed", "injected"]
