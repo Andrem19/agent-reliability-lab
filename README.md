@@ -84,7 +84,8 @@ Repairs to white-box targets are developed in isolated worktrees and promoted to
 `autotune/staging`; ARL never writes directly to a target's default branch.
 
 The production executor is never substituted: `job-search` requires ZCode and
-the locally served `qwen3.8-27b`. If LM Studio is unavailable, doctor reports
+the locally served `qwen3.8-27b` through its OpenAI-compatible endpoint (the
+recommended runtime is the tuned llama.cpp server). If the endpoint is unavailable, doctor reports
 `test_infra_unavailable`.
 
 See [discovery](docs/discovery.md) and [architecture](docs/architecture.md).

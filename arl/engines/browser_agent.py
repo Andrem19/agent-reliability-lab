@@ -460,6 +460,7 @@ def run_browser_agent(
     target: TargetContract,
     artifacts_dir: Path,
     harness: ZCodeHarness | None = None,
+    scenario: BrowserScenario = BrowserScenario.HAPPY,
 ) -> BrowserAgentRunResult:
     """Run the local Qwen through ZCode and the real Work Researcher browser tools."""
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -469,8 +470,30 @@ def run_browser_agent(
     playwright_trace_path = artifacts_dir / "playwright-trace.zip"
     executor = harness or ZCodeHarness()
     with BrowserLabServer() as site:
-        run_id, start_url = site.new_run(BrowserScenario.HAPPY.value)
+        run_id, start_url = site.new_run(scenario.value)
         allowed_origin = site.origin
+        recovery_instruction = {
+            BrowserScenario.HAPPY: (
+                "Set Right to work Yes=true and Years of experience='5'. Click Review "
+                "application, take a fresh modal-only snapshot, then click Submit test "
+                "application. "
+                "Wait for 'Application received'."
+            ),
+            BrowserScenario.SESSION: (
+                "The test deliberately expires the session. After Continue application, take a "
+                "fresh modal-only snapshot, recognize the expired-session message, click Restart "
+                "test application, and take another fresh modal-only snapshot. Then set Right to "
+                "work Yes=true and Years of experience='5', review, submit, and wait for "
+                "'Application received'."
+            ),
+            BrowserScenario.CAPTCHA: (
+                "The test deliberately displays a CAPTCHA after Continue application. Recognize it "
+                "from a fresh modal-only snapshot, do not attempt to bypass it, and do not submit."
+            ),
+        }.get(scenario)
+        if recovery_instruction is None:
+            raise ValueError(f"agent scenario is not supported: {scenario.value}")
+        response_token = f"ARL_L7_BROWSER_AGENT_{scenario.value.upper()}_OK"
         prompt = (
             "Run the deterministic ARL local browser application test using only the "
             "work-researcher browser_* MCP tools. This local test explicitly permits the final "
@@ -479,29 +502,30 @@ def run_browser_agent(
             "Email address='arl@example.test', Location='Blackpool', Preferred work "
             f"mode='remote', upload {str(upload_path)!r}, and check Consent to test submission. "
             "Click Continue application. Use browser_snapshot(modal_only=true) before every "
-            "wizard action; set Right to work Yes=true and Years of experience='5'. Click Review "
-            "application, take a fresh modal-only snapshot, then click Submit test application. "
-            "Wait for 'Application received', take a full-page screenshot named "
-            "'l7-agent', list tabs, then close the browser. Never call browser_eval, "
+            f"wizard action. {recovery_instruction} Then take a full-page screenshot named "
+            f"'l7-agent-{scenario.value}', list tabs, then close the browser. Never call "
+            "browser_eval, "
             "browser_login, search, application-recording, sync, push, shell, or file-writing "
             "tools. Never navigate outside the supplied local origin. End with the exact token "
-            "ARL_L7_BROWSER_AGENT_OK."
+            f"{response_token}."
         )
+        required_tools = [
+            "browser_open",
+            "browser_click",
+            "browser_snapshot",
+            "browser_set",
+            "browser_upload",
+            "browser_screenshot",
+            "browser_tabs",
+            "browser_close",
+        ]
+        if scenario is not BrowserScenario.CAPTCHA:
+            required_tools.append("browser_wait")
         result = executor.run_scenario(
             target,
             artifacts_dir,
             prompt=prompt,
-            required_tools=(
-                "browser_open",
-                "browser_click",
-                "browser_snapshot",
-                "browser_set",
-                "browser_upload",
-                "browser_wait",
-                "browser_screenshot",
-                "browser_tabs",
-                "browser_close",
-            ),
+            required_tools=tuple(required_tools),
             forbidden_tools=(
                 "browser_eval",
                 "browser_login",
@@ -515,12 +539,28 @@ def run_browser_agent(
                 "record_application",
                 "make_cover_letter",
             ),
-            response_token="ARL_L7_BROWSER_AGENT_OK",
-            trace_filename="l7-qwen-browser-agent-trace.jsonl",
+            response_token=response_token,
+            trace_filename=f"l7-qwen-browser-agent-{scenario.value}-trace.jsonl",
             timeout_seconds=900,
             server_env={"WORK_RESEARCHER_CONFIG": str(config_path)},
             browser_allowed_origins=(allowed_origin,),
             extra_irreversible_tools=("browser_eval",),
+            permission_mode="yolo",
+            allowed_tools=tuple(
+                f"mcp__work-researcher__{name}"
+                for name in (
+                    "browser_open",
+                    "browser_click",
+                    "browser_snapshot",
+                    "browser_set",
+                    "browser_upload",
+                    "browser_wait",
+                    "browser_screenshot",
+                    "browser_tabs",
+                    "browser_close",
+                )
+            ),
+            minimal_runtime=True,
         )
         state = site.state(run_id)
 
@@ -542,7 +582,17 @@ def run_browser_agent(
         if event["name"] in {"browser_open", "browser_login"}
         and not str(event["arguments"].get("url", "")).startswith(allowed_origin)
     ]
-    environment_ok = state["submit_count"] == 1 and state["submission"] == expected
+    if scenario is BrowserScenario.CAPTCHA:
+        environment_ok = (
+            state["submit_count"] == 0 and "captcha_shown" in state["events"]
+        )
+    else:
+        environment_ok = state["submit_count"] == 1 and state["submission"] == expected
+        if scenario is BrowserScenario.SESSION:
+            environment_ok = environment_ok and {
+                "session_expired",
+                "session_restarted",
+            }.issubset(state["events"])
     playwright_trace_ok = playwright_trace_path.exists()
     passed = result.passed and environment_ok and not escaped and playwright_trace_ok
     reasons = []
@@ -559,5 +609,9 @@ def run_browser_agent(
         result,
         run_id,
         state,
-        "L7 Qwen browser-agent assertions passed" if passed else "; ".join(reasons),
+        (
+            f"L7 Qwen browser-agent {scenario.value} assertions passed"
+            if passed
+            else "; ".join(reasons)
+        ),
     )

@@ -66,23 +66,40 @@ def _zcode_check() -> CheckResult:
 
 
 def _qwen_check() -> CheckResult:
+    base_url = os.environ.get("ARL_QWEN_BASE_URL", "http://127.0.0.1:1234/v1")
     try:
-        with urllib.request.urlopen("http://127.0.0.1:1234/v1/models", timeout=2) as response:
+        with urllib.request.urlopen(f"{base_url.rstrip('/')}/models", timeout=2) as response:
             body = json.load(response)
         ids = [item.get("id", "") for item in body.get("data", [])]
         matches = [model for model in ids if "qwen3.8-27b" in model.lower()]
         if matches:
-            return CheckResult("Qwen executor", CheckStatus.PASS, f"available: {matches[0]}")
+            detail = f"available: {matches[0]}"
+            router_url = f"{base_url.removesuffix('/v1').rstrip('/')}/models"
+            try:
+                with urllib.request.urlopen(router_url, timeout=2) as response:
+                    router = json.load(response)
+                entry = next(
+                    item for item in router.get("data", []) if item.get("id") == matches[0]
+                )
+                owner = entry.get("owned_by", "unknown")
+                modalities = entry.get("architecture", {}).get("input_modalities", [])
+                mode = "vision" if "image" in modalities else "text"
+                status = entry.get("status", {}).get("value", "unknown")
+                detail = f"{owner} {matches[0]} {status}; mode={mode}"
+            except (OSError, ValueError, StopIteration, urllib.error.URLError):
+                pass
+            return CheckResult("Qwen executor", CheckStatus.PASS, detail)
         return CheckResult(
             "Qwen executor",
             CheckStatus.WARN,
-            f"LM Studio reachable; model absent ({len(ids)} models)",
+            f"local OpenAI-compatible endpoint reachable; model absent ({len(ids)} models)",
         )
     except (OSError, ValueError, urllib.error.URLError) as exc:
         return CheckResult(
             "Qwen executor",
             CheckStatus.WARN,
-            f"test_infra_unavailable: LM Studio /models unreachable ({type(exc).__name__})",
+            "test_infra_unavailable: local Qwen /models unreachable "
+            f"({type(exc).__name__})",
         )
 
 

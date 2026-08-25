@@ -432,6 +432,88 @@ def _execute_l6_soak(
     return state
 
 
+def _execute_l7_soak(
+    config,
+    target_contract,
+    *,
+    hours: float | None,
+    cycles: int | None,
+    interval_seconds: float,
+    resume_state=None,
+):
+    schedule = (
+        ("direct", BrowserScenario.HAPPY),
+        ("direct", BrowserScenario.STALE),
+        ("agent", BrowserScenario.HAPPY),
+        ("direct", BrowserScenario.SESSION),
+        ("direct", BrowserScenario.CAPTCHA),
+        ("agent", BrowserScenario.SESSION),
+        ("direct", BrowserScenario.STALE),
+        ("agent", BrowserScenario.CAPTCHA),
+    )
+
+    def run_cycle(cycle_number: int) -> bool:
+        kind, scenario = schedule[(cycle_number - 1) % len(schedule)]
+        artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
+        if kind == "agent":
+            result = run_browser_agent(target_contract, artifacts, scenario=scenario)
+            passed = result.passed
+            trace_id = result.model_result.trace_id
+            trace_path = result.model_result.trace_path
+            session_id = result.model_result.session_id
+            model = result.model_result.model
+            reason = result.reason
+            provider = "llama.cpp-zcode"
+        else:
+            direct = asyncio.run(
+                run_browser_direct(target_contract, artifacts, scenario)
+            )
+            passed = direct.passed
+            trace_id = direct.trace_id
+            trace_path = direct.trace_path
+            session_id = None
+            model = "none"
+            reason = direct.reason
+            provider = "direct-browser-mcp"
+        typer.echo(
+            f"{'PASS' if passed else 'FAIL'} L7 kind={kind} "
+            f"scenario={scenario.value} trace={trace_path} reason={reason}"
+        )
+        _record_production_check(
+            config,
+            scenario=f"l7-browser-{kind}-{scenario.value}",
+            provider=provider,
+            model=model,
+            passed=passed,
+            session_id=session_id,
+            trace_id=trace_id,
+            trace_path=trace_path,
+            reason=reason,
+        )
+        return passed
+
+    runner = SoakRunner(config.paths.state_dir / "l7-browser-soak.json")
+    state = runner.run(
+        run_cycle,
+        hours=hours,
+        max_cycles=cycles,
+        interval_seconds=interval_seconds,
+        metadata={
+            "target": target_contract.name,
+            "scenario": "browser-soak",
+            "layers": "L7",
+            "interval_seconds": interval_seconds,
+            "runtime": "llama.cpp-vision",
+        },
+        resume_from=resume_state,
+    )
+    typer.echo(
+        f"L7 SOAK {state.status.upper()} cycles={state.completed_cycles} "
+        f"failures={state.failures} elapsed={state.elapsed_seconds:.2f}s"
+    )
+    return state
+
+
 @app.command()
 def version() -> None:
     """Print the ARL version."""
@@ -525,8 +607,22 @@ def run(
     if selected_layers == {"L7"}:
         if target != "job-search":
             raise typer.BadParameter("L7 browser validation is defined for job-search")
+        if scenario == "soak":
+            effective_interval = (
+                interval_seconds if interval_seconds is not None else (60.0 if hours else 0.0)
+            )
+            state = _execute_l7_soak(
+                config,
+                target_contract,
+                cycles=None if hours is not None else (cycles or 8),
+                hours=hours,
+                interval_seconds=effective_interval,
+            )
+            if state.failures:
+                raise typer.Exit(1)
+            return
         if hours is not None or cycles is not None or interval_seconds is not None:
-            raise typer.BadParameter("L7 launch controls are bounded; timed soak comes later")
+            raise typer.BadParameter("L7 timing controls require --scenario soak")
         artifacts = config.paths.state_dir / "artifacts" / str(uuid.uuid4())
         if scenario in {"echo", "direct", "suite"}:
             results = asyncio.run(run_browser_direct_suite(target_contract, artifacts))
@@ -560,7 +656,7 @@ def run(
             _record_production_check(
                 config,
                 scenario="l7-browser-agent",
-                provider="lmstudio",
+                provider="llama.cpp-zcode",
                 model=result.model_result.model,
                 passed=result.passed,
                 session_id=result.model_result.session_id,
@@ -790,6 +886,35 @@ def resume_l6() -> None:
         raise typer.Exit(1)
     target_contract = TargetRegistry(config.paths.targets_dir).get(metadata["target"])
     state = _execute_l6_soak(
+        config,
+        target_contract,
+        hours=None,
+        cycles=None,
+        interval_seconds=float(metadata.get("interval_seconds", 0)),
+        resume_state=saved,
+    )
+    if state.failures:
+        raise typer.Exit(1)
+
+
+@app.command("resume-l7")
+def resume_l7() -> None:
+    config = load_config()
+    checkpoint = config.paths.state_dir / "l7-browser-soak.json"
+    if not checkpoint.exists():
+        typer.echo("no persisted L7 soak checkpoint", err=True)
+        raise typer.Exit(1)
+    runner = SoakRunner(checkpoint)
+    saved = runner.load()
+    if saved.status == "completed":
+        typer.echo("L7 checkpoint already completed")
+        return
+    metadata = saved.metadata or {}
+    if metadata.get("layers") != "L7" or not metadata.get("target"):
+        typer.echo("checkpoint lacks a resumable L7 run specification", err=True)
+        raise typer.Exit(1)
+    target_contract = TargetRegistry(config.paths.targets_dir).get(metadata["target"])
+    state = _execute_l7_soak(
         config,
         target_contract,
         hours=None,

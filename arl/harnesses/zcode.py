@@ -37,7 +37,8 @@ class ZCodeHarness:
         try:
             import urllib.request
 
-            with urllib.request.urlopen("http://127.0.0.1:1234/v1/models", timeout=3) as stream:
+            base_url = os.environ.get("ARL_QWEN_BASE_URL", "http://127.0.0.1:1234/v1")
+            with urllib.request.urlopen(f"{base_url.rstrip('/')}/models", timeout=3) as stream:
                 models = json.load(stream)
         except (OSError, ValueError) as exc:
             return False, f"test_infra_unavailable: {type(exc).__name__}"
@@ -56,6 +57,8 @@ class ZCodeHarness:
         server_env: dict[str, str] | None = None,
         browser_allowed_origins: tuple[str, ...] = (),
         extra_irreversible_tools: tuple[str, ...] = (),
+        minimal_runtime: bool = False,
+        allowed_tools: tuple[str, ...] = (),
     ) -> dict:
         server = target.topology[0].server
         if server.transport != "stdio" or server.command is None:
@@ -99,33 +102,58 @@ class ZCodeHarness:
         }
         if server_env:
             mcp_server["env"] = server_env
-        return {
+        config = {
             "provider": {
-                "arl-lmstudio": {
-                    "name": "ARL LM Studio",
+                "arl-local-qwen": {
+                    "name": "ARL local Qwen (llama.cpp)",
                     "kind": "openai-compatible",
                     "options": {
-                        "apiKey": "lm-studio",
-                        "baseURL": "http://127.0.0.1:1234/v1",
+                        "apiKey": "local-qwen",
+                        "baseURL": os.environ.get(
+                            "ARL_QWEN_BASE_URL", "http://127.0.0.1:1234/v1"
+                        ),
                         "apiKeyRequired": False,
                     },
                     "enabled": True,
                     "source": "project",
                     "models": {
                         target.executor.model: {
-                            "limit": {"context": 78080, "output": 8192},
-                            "modalities": {"input": ["text"], "output": ["text"]},
+                            "limit": {
+                                "context": int(os.environ.get("ARL_QWEN_CONTEXT", "78000")),
+                                "output": 8192,
+                            },
+                            "modalities": {
+                                "input": ["text", "image"],
+                                "output": ["text"],
+                            },
                         }
                     },
                 }
             },
-            "model": {"main": f"arl-lmstudio/{target.executor.model}"},
+            "model": {"main": f"arl-local-qwen/{target.executor.model}"},
             "mcp": {
                 "servers": {
                     target.topology[0].name: mcp_server
                 }
             },
         }
+        if minimal_runtime:
+            config.update(
+                {
+                    "plugins": {"enabled": False},
+                    "skills": {"enabled": False},
+                    "permission": {"mode": "yolo", "allowedTools": list(allowed_tools)},
+                    "features": {
+                        "compact": True,
+                        "rewind": False,
+                        "subagent": False,
+                        "memory": False,
+                        "skill": False,
+                        "mcp": True,
+                    },
+                }
+            )
+        return config
 
     def run_smoke(self, target: TargetContract, artifacts_dir: Path) -> ZCodeRunResult:
         return self.run_scenario(
@@ -276,6 +304,9 @@ class ZCodeHarness:
         server_env: dict[str, str] | None = None,
         browser_allowed_origins: tuple[str, ...] = (),
         extra_irreversible_tools: tuple[str, ...] = (),
+        permission_mode: str = "plan",
+        allowed_tools: tuple[str, ...] = (),
+        minimal_runtime: bool = False,
     ) -> ZCodeRunResult:
         healthy, detail = self.discover(target.executor.model)
         trace_id = new_trace_id()
@@ -295,21 +326,26 @@ class ZCodeHarness:
             server_env=server_env,
             browser_allowed_origins=browser_allowed_origins,
             extra_irreversible_tools=extra_irreversible_tools,
+            minimal_runtime=minimal_runtime,
+            allowed_tools=allowed_tools,
         )
         (config_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
         isolated_home = workspace / "home"
         isolated_home.mkdir()
-        command = (
+        command_parts = [
             self.node,
             str(self.zcode_cli),
             "--cwd",
             str(workspace),
             "--mode",
-            "plan",
+            permission_mode,
+        ]
+        command_parts.extend((
             "--json",
             "--prompt",
             prompt,
-        )
+        ))
+        command = tuple(command_parts)
         allowed_env = {
             "APPDATA",
             "COMSPEC",
@@ -330,6 +366,9 @@ class ZCodeHarness:
         environment["PYTHONNOUSERSITE"] = "1"
         process = run_process(command, env=environment, timeout=timeout_seconds)
         if process.timed_out or process.returncode != 0:
+            stderr_excerpt = process.stderr
+            if len(stderr_excerpt) > 4000:
+                stderr_excerpt = stderr_excerpt[:2000] + "\n...\n" + stderr_excerpt[-2000:]
             return ZCodeRunResult(
                 False,
                 None,
@@ -337,7 +376,7 @@ class ZCodeHarness:
                 process.stdout,
                 trace_path,
                 target.executor.model,
-                "ZCode process failed or timed out: " + process.stderr[-1000:],
+                "ZCode process failed or timed out: " + stderr_excerpt,
             )
         try:
             payload = json.loads(process.stdout)

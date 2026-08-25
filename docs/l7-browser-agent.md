@@ -41,7 +41,8 @@ events, screenshots, allowed tool names, and navigation origin.
 
 ## Agent scenario
 
-`scenario=agent` runs local `qwen3.8-27b` through the real ZCode harness. The model
+`scenario=agent` runs local Vision-enabled `qwen3.8-27b` from the tuned llama.cpp
+server through the real ZCode harness. The model
 must complete the same local happy path using only the supplied browser tools,
 fresh modal snapshots, and the isolated upload file. ARL independently evaluates
 the MCP trace and the local site's state; the model's final prose is not accepted
@@ -71,11 +72,19 @@ uv run arl run job-search --layers L7 --scenario stale
 
 # Bounded local-Qwen agent acceptance run.
 uv run arl run job-search --layers L7 --scenario agent
+
+# Two-hour mixed direct + Qwen/ZCode browser soak.
+uv run arl run job-search --layers L7 --scenario soak --hours 2 --interval-seconds 60
+
+# Resume an interrupted timed L7 run.
+uv run arl resume-l7
 ```
 
-Timed L7 soak execution is intentionally not enabled yet. It should be added only
-after the bounded direct suite and agent acceptance run pass, using the same
-checkpoint/monitor/report pattern as L4 and L6.
+The timed soak rotates direct happy-path, stale-DOM, expired-session and CAPTCHA
+controls with real Qwen/ZCode agent runs. Agent cycles cover the happy path,
+expired-session recovery and CAPTCHA safe-stop. It checkpoints to
+`.arl/l7-browser-soak.json`; every cycle has a fresh loopback site, browser profile,
+MCP trace, Playwright trace and data directory.
 
 ## Current readiness evidence
 
@@ -86,8 +95,7 @@ an agent could change Full name instead of the visible radio button. The modal
 tagger now clears the background numbering namespace; the live regression and
 target tests pass. The validated target changes are staged on Work Researcher
 `autotune/staging` at `0f7d555`, leaving its default branch untouched. The Qwen
-`scenario=agent` gate has been implemented but is deliberately left for the next
-explicit launch.
+`scenario=agent` gate passed through the tuned llama.cpp Vision runtime and ZCode.
 
 ## Real-site progression
 
