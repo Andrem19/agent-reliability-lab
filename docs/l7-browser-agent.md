@@ -88,14 +88,29 @@ MCP trace, Playwright trace and data directory.
 
 ## Current readiness evidence
 
-The first bounded direct CLI gate completed on 2026-08-25 with 4/4 PASS: `happy`,
+The bounded direct CLI gate completed on 2026-08-25 with 4/4 PASS: `happy`,
 `stale`, `session`, and `captcha`. It also exposed a real Work Researcher browser
 defect: modal element numbers collided with numbered fields behind the dialog, so
 an agent could change Full name instead of the visible radio button. The modal
 tagger now clears the background numbering namespace; the live regression and
 target tests pass. The validated target changes are staged on Work Researcher
-`autotune/staging` at `0f7d555`, leaving its default branch untouched. The Qwen
-`scenario=agent` gate passed through the tuned llama.cpp Vision runtime and ZCode.
+`autotune/staging` at `0f7d555`, leaving its default branch untouched.
+
+The final clean mixed soak then ran for 7282.141 seconds and completed 47/47
+cycles with zero failures. Its 30 direct controls covered 6 happy paths, 12
+stale-DOM recoveries, 6 expired-session recoveries and 6 CAPTCHA stops. Its 17
+real-agent controls ran Qwen through the tuned llama.cpp Vision endpoint and
+ZCode: 6 happy paths, 6 session recoveries and 5 CAPTCHA safe-stops. The evidence
+audit found 47 passing independent environment oracles, 47 MCP traces, 47
+Playwright traces, exact loopback-only navigation across 47 fresh origins, and
+zero forbidden calls.
+
+An earlier run is deliberately excluded from acceptance because it exposed a
+real CAPTCHA latency defect: repeated snapshots expanded the agent conversation
+until ZCode hit its headers timeout. The prompt now follows Work Researcher's
+bounded fresh-snapshot protocol and the minimal ZCode runtime has a suitable
+network deadline. A bounded CAPTCHA replay passed before the clean two-hour run,
+and the timeout did not recur.
 
 ## Real-site progression
 

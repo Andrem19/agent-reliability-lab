@@ -12,7 +12,7 @@ This file distinguishes executable evidence from pending external or elapsed-tim
 | M5 | PASS | Transport-only fallback/circuit breaker, automatic model×harness interaction detection, Streamable HTTP client path, protocol compatibility matrix, and real native Z.ai Coding Plan / GLM-5.3 execution. |
 | M6 | PASS | Boundary fuzz crash detection, high-risk live-fuzz block, injection canary neutralization and proxy-confirmed chaos attribution. |
 | M7 | PASS | Capability graph, synthesis lint, coverage scheduler, persistent two-pass pattern reuse, kill/resume recovery, and a literal 7243-second Job Search MCP soak: 24/24 PASS with zero failures. |
-| L7 Browser Agent | PARTIAL PASS | Direct local-browser gate 4/4 PASS with MCP + Playwright evidence. Qwen/ZCode agent gate is implemented and remains the next explicit launch. |
+| L7 Browser Agent | PASS | Clean 7282-second mixed browser soak: 47/47 PASS, including 30 direct controls and 17 real Qwen/llama.cpp Vision → ZCode → Work Researcher MCP agent cycles. |
 
 ## Latest verification
 
@@ -55,6 +55,15 @@ This file distinguishes executable evidence from pending external or elapsed-tim
   run used an isolated browser profile and produced MCP JSONL plus Playwright trace
   evidence. The gate found and repaired a real modal/background element-number
   collision in the Work Researcher browser layer.
+- Literal L7 Browser Agent soak: 7282.141 seconds, 47/47 PASS with zero failures.
+  The clean run contains 30 direct controls (6 happy, 12 stale-DOM, 6 session,
+  6 CAPTCHA) and 17 real local-Qwen controls through llama.cpp Vision and ZCode
+  (6 happy, 6 session recovery, 5 CAPTCHA safe-stop). All 47 independent site
+  oracles passed, all 47 runs retained MCP JSONL and Playwright evidence, every
+  navigation stayed on its unique `127.0.0.1` origin, and no forbidden tool was
+  called. A preceding dirty run exposed a CAPTCHA headers-timeout/latency defect;
+  the bounded browser protocol and ZCode network deadline were repaired before
+  the clean acceptance run.
 - Runtime reports: `.arl` metadata to `reports/runtime/report.md` and `report.json`.
 
 ## Optional extended evidence
